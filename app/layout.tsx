@@ -25,9 +25,7 @@ export const metadata: Metadata = {
     "AI image ideas",
     "IGTrendy",
   ],
-  alternates: {
-    canonical: "https://igtrendy.in",
-  },
+  alternates: { canonical: "https://igtrendy.in" },
   robots: {
     index: true,
     follow: true,
@@ -55,14 +53,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        {children}
-      </body>
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body>
     </html>
   );
 }
