@@ -33,6 +33,15 @@ values
 on conflict (name) do update
 set slug = excluded.slug, icon = excluded.icon;
 
+
+-- Categories are needed by the upload form and can be publicly read.
+drop policy if exists "Categories are publicly readable" on public.categories;
+create policy "Categories are publicly readable"
+on public.categories
+for select
+to anon, authenticated
+using (true);
+
 -- Public can read images from the public prompt-images bucket.
 drop policy if exists "Public can view IGTrendy prompt images" on storage.objects;
 create policy "Public can view IGTrendy prompt images"

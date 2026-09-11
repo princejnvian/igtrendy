@@ -12,26 +12,7 @@ const staticPrompts: Record<string, {
   prompt: string;
   views: string;
   likes: string;
-}> = {
-  "retro-80s": {
-    title: "80s Indian Retro Portrait",
-    creator: "Prince",
-    cat: "Retro / Vintage",
-    image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1200&q=90",
-    views: "18,420",
-    likes: "1,240",
-    prompt: "Create a highly realistic 1980s Indian portrait with authentic film grain, warm analog colors, period-correct hairstyle and clothing, soft studio lighting, natural skin texture, vintage camera look, subtle imperfections, cinematic composition, and an unmistakable early-80s atmosphere. Preserve the person's facial identity.",
-  },
-  "cinematic-man": {
-    title: "Cinematic Street Portrait",
-    creator: "Aarav",
-    cat: "Cinematic",
-    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=90",
-    views: "12,110",
-    likes: "932",
-    prompt: "Create a cinematic editorial portrait on a rain-soaked city street at night, realistic skin, dramatic practical lights, shallow depth of field, subtle film grain, rich shadows, premium photography, 85mm lens.",
-  },
-};
+}> = {};
 
 type PromptData = {
   id: string;

@@ -24,6 +24,8 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const [published, setPublished] = useState<Submission[]>([]);
+  const [publishedLoading, setPublishedLoading] = useState(true);
 
   async function loadSubmissions() {
     setLoading(true);
@@ -49,6 +51,32 @@ export default function Admin() {
 
     setSubmissions((data ?? []) as Submission[]);
     setLoading(false);
+
+    const { data: publishedData, error: publishedError } = await supabase
+      .from("prompts")
+      .select(`
+        id, title, prompt_text, image_url, status, created_at, creator_id,
+        profiles:creator_id (username, full_name),
+        categories:category_id (name, slug)
+      `)
+      .eq("status", "published")
+      .order("published_at", { ascending: false, nullsFirst: false });
+
+    if (!publishedError) {
+      setPublished((publishedData ?? []).map((row: any) => {
+        const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+        const category = Array.isArray(row.categories) ? row.categories[0] : row.categories;
+        return {
+          ...row,
+          creator_username: profile?.username ?? null,
+          creator_full_name: profile?.full_name ?? null,
+          category_name: category?.name ?? null,
+          category_slug: category?.slug ?? null,
+          category_id: null,
+        };
+      }));
+    }
+    setPublishedLoading(false);
   }
 
   useEffect(() => {
@@ -71,6 +99,27 @@ export default function Admin() {
     }
 
     setSubmissions((current) => current.filter((item) => item.id !== id));
+    setWorkingId(null);
+  }
+
+  async function deletePublished(id: string) {
+    const confirmed = window.confirm("Remove this published prompt from IGTrendy? This cannot be undone.");
+    if (!confirmed) return;
+
+    setWorkingId(id);
+    setError("");
+
+    const { error: rpcError } = await supabase.rpc("admin_delete_prompt", {
+      p_prompt_id: id,
+    });
+
+    if (rpcError) {
+      setError(rpcError.message || "Could not remove this prompt.");
+      setWorkingId(null);
+      return;
+    }
+
+    setPublished((current) => current.filter((item) => item.id !== id));
     setWorkingId(null);
   }
 
@@ -147,6 +196,44 @@ export default function Admin() {
                     onClick={() => moderate(submission.id, "publish")}
                   >
                     {workingId === submission.id ? "Working…" : "Publish"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+
+        <div className="admin-tabs published-tab">Published <span>{published.length}</span></div>
+
+        {publishedLoading ? (
+          <div className="submission">
+            <div><h2>Loading published prompts…</h2></div>
+          </div>
+        ) : published.length === 0 ? (
+          <div className="submission">
+            <div><h2>No published prompts</h2><p className="muted">Published prompts will appear here.</p></div>
+          </div>
+        ) : (
+          published.map((submission) => (
+            <div className="submission published-submission" key={submission.id}>
+              <div className="admin-thumb">
+                <img src={submission.image_url} alt={submission.title} />
+              </div>
+              <div>
+                <span className="detail-cat">{submission.category_name ?? "Uncategorized"}</span>
+                <h2>{submission.title}</h2>
+                <p>
+                  Published by <b>{submission.creator_full_name || submission.creator_username || "Creator"}</b>
+                  {submission.creator_username ? ` · @${submission.creator_username}` : ""}
+                </p>
+                <div className="admin-prompt">{submission.prompt_text}</div>
+                <div className="admin-buttons">
+                  <button
+                    className="reject"
+                    disabled={workingId === submission.id}
+                    onClick={() => deletePublished(submission.id)}
+                  >
+                    {workingId === submission.id ? "Removing…" : "Remove from Website"}
                   </button>
                 </div>
               </div>

@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 import { supabase } from "@/lib/supabase";
 
-const staticPromptPages = ["retro-80s", "cinematic-man"];
 
 export const revalidate = 3600;
 
@@ -21,13 +20,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  const staticPages = staticPromptPages.map((id) => ({
-    url: `https://igtrendy.in/prompt/${id}`,
-    lastModified: now,
-    changeFrequency: "weekly" as const,
-    priority: 0.8,
-  }));
-
   return [
     {
       url: "https://igtrendy.in",
@@ -35,7 +27,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 1,
     },
-    ...staticPages,
     ...databasePromptPages,
   ];
 }

@@ -10,16 +10,16 @@ const categories = [
   ["🧑‍💼", "Professional"], ["🎨", "Anime / Artistic"], ["🏞️", "Travel"], ["🏆", "Before / After"], ["🎭", "Character Creation"],
 ];
 
-const prompts = [
-  { id: "retro-80s", title: "80s Indian Retro Portrait", creator: "Prince", cat: "Retro / Vintage", views: 18420, likes: 1240, image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=900&q=85", prompt: "Create a highly realistic 1980s Indian portrait with authentic film grain, warm analog colors, period-correct hairstyle and clothing, soft studio lighting, natural skin texture, vintage camera look, subtle imperfections, cinematic composition, and an unmistakable early-80s atmosphere. Preserve the person's facial identity." },
-  { id: "cinematic-man", title: "Cinematic Street Portrait", creator: "Aarav", cat: "Cinematic", views: 12110, likes: 932, image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=85", prompt: "Create a cinematic editorial portrait on a rain-soaked city street at night, realistic skin, dramatic practical lights, shallow depth of field, subtle film grain, rich shadows, premium photography, 85mm lens." },
-  { id: "wedding-editorial", title: "Luxury Wedding Editorial", creator: "Maya", cat: "Wedding", views: 9870, likes: 811, image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=900&q=85", prompt: "Create a luxury Indian wedding editorial photograph with elegant traditional styling, realistic fabric detail, soft golden light, premium magazine composition, natural expressions and cinematic depth." },
-  { id: "retro-couple", title: "Vintage Couple — 1987", creator: "Neha AI", cat: "Retro / Vintage", views: 9340, likes: 790, image: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?auto=format&fit=crop&w=900&q=85", prompt: "Transform the scene into a believable 1987 Indian couple photograph, authentic period fashion, analog colors, slightly faded print, realistic skin and hair, 35mm film texture and candid composition." },
-  { id: "fashion-clean", title: "Clean Fashion Campaign", creator: "Karan", cat: "Fashion", views: 7920, likes: 640, image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=900&q=85", prompt: "Premium fashion campaign portrait, clean studio backdrop, sophisticated wardrobe, soft directional lighting, realistic skin texture, luxury editorial photography, crisp details and restrained color grading." },
-  { id: "anime-self", title: "Anime Character Portrait", creator: "Riya", cat: "Anime / Artistic", views: 7440, likes: 610, image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=900&q=85", prompt: "Create a polished anime-inspired character portrait with expressive eyes, detailed hair, cinematic rim lighting, painterly textures and a premium animated-film aesthetic." },
-  { id: "travel-film", title: "Travel Film Still", creator: "Kabir", cat: "Travel", views: 6910, likes: 521, image: "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=85", prompt: "Create a cinematic travel photograph that feels like a frame from an award-winning film, natural light, atmospheric depth, realistic details, subtle grain and authentic human emotion." },
-  { id: "professional", title: "Modern Professional Headshot", creator: "Dev", cat: "Professional", views: 6240, likes: 488, image: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=900&q=85", prompt: "Create a premium professional headshot with natural skin, clean wardrobe, soft studio lighting, subtle background blur, confident expression and realistic corporate photography." },
-];
+type HomePrompt = {
+  id: string;
+  title: string;
+  creator: string;
+  username: string;
+  cat: string;
+  views: number;
+  likes: number;
+  image: string;
+};
 
 function Icon({ children }: { children: React.ReactNode }) { return <span className="icon">{children}</span>; }
 
@@ -30,6 +30,8 @@ export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [username, setUsername] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
+  const [prompts, setPrompts] = useState<HomePrompt[]>([]);
+  const [loadingPrompts, setLoadingPrompts] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -63,11 +65,48 @@ export default function Home() {
       if (mounted) setAuthLoading(false);
     }
 
-    loadUser();
+    async function loadPrompts() {
+      setLoadingPrompts(true);
+      const { data, error } = await supabase
+        .from("prompts")
+        .select(`
+          id, title, image_url, views, likes, created_at, published_at,
+          profiles:creator_id (username, full_name),
+          categories:category_id (name)
+        `)
+        .eq("status", "published")
+        .order("published_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Failed to load published prompts:", error);
+        setPrompts([]);
+      } else {
+        setPrompts((data ?? []).map((row: any) => {
+          const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+          const category = Array.isArray(row.categories) ? row.categories[0] : row.categories;
+          const creatorUsername = profile?.username || "creator";
+          return {
+            id: String(row.id),
+            title: row.title,
+            creator: profile?.full_name || creatorUsername,
+            username: creatorUsername,
+            cat: category?.name || "AI Prompts",
+            views: Number(row.views ?? 0),
+            likes: Number(row.likes ?? 0),
+            image: row.image_url,
+          };
+        }));
+      }
+      setLoadingPrompts(false);
+    }
+
+    loadUser();
+    loadPrompts();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 
@@ -77,7 +116,6 @@ export default function Home() {
         return;
       }
 
-      // Fetch profile outside the auth callback's synchronous flow.
       setTimeout(async () => {
         const { data: profile } = await supabase
           .from("profiles")
@@ -109,12 +147,14 @@ export default function Home() {
     setUsername("");
   }
 
-  const filtered = useMemo(() => prompts.filter(p => {
-    const q = query.toLowerCase();
-    const matchesQuery = !q || `${p.title} ${p.creator} ${p.cat}`.toLowerCase().includes(q);
+  const filtered = useMemo(() => prompts.filter((p) => {
+    const q = query.toLowerCase().trim();
+    const matchesQuery = !q || `${p.title} ${p.creator} ${p.username} ${p.cat}`.toLowerCase().includes(q);
     const matchesCat = active === "Viral / Trending" || p.cat === active;
     return matchesQuery && matchesCat;
-  }), [query, active]);
+  }), [query, active, prompts]);
+
+  const publishedCount = prompts.length;
 
   return (
     <main className="app-shell">
@@ -129,24 +169,9 @@ export default function Home() {
             <span className="signin">...</span>
           ) : user ? (
             <>
-              <Link className="signin" href={`/profile/${encodeURIComponent(username || "creator")}`}>
-                @{username || "creator"}
-              </Link>
-              <button
-                type="button"
-                className="signin"
-                onClick={handleSignOut}
-                style={{ background: "none", border: "none", cursor: "pointer" }}
-              >
-                Sign out
-              </button>
-              <Link
-                href={`/profile/${encodeURIComponent(username || "creator")}`}
-                className="avatar"
-                aria-label="Open profile"
-              >
-                {(username || "C")[0].toUpperCase()}
-              </Link>
+              <Link className="signin" href={`/profile/${encodeURIComponent(username || "creator")}`}>@{username || "creator"}</Link>
+              <button type="button" className="signin mobile-signout" onClick={handleSignOut} style={{ background: "none", border: "none", cursor: "pointer" }}>Sign out</button>
+              <Link href={`/profile/${encodeURIComponent(username || "creator")}`} className="avatar" aria-label="Open profile">{(username || "C")[0].toUpperCase()}</Link>
             </>
           ) : (
             <>
@@ -169,15 +194,22 @@ export default function Home() {
         {drawer && <button className="backdrop" onClick={() => setDrawer(false)} aria-label="Close menu"/>}
 
         <section className="content">
-          <div className="hero-row"><div><div className="eyebrow"><span/> LIVE TRENDS <span className="pulse"/></div><h1>Discover the <em>prompt</em><br/>behind the picture.</h1><p>Find viral AI image ideas, copy the exact prompt, and create your own.</p></div><div className="hero-stats"><strong>12.8K+</strong><span>prompts shared</span></div></div>
-          <div className="section-head"><div><h2>{active}</h2><p>{active === "Viral / Trending" ? "What creators are searching and copying right now." : `Popular prompts in ${active}.`}</p></div><div className="sort">Trending <span>⌄</span></div></div>
-          <div className="masonry">
-            {filtered.map(p => <Link href={`/prompt/${p.id}`} className="prompt-card" key={p.id}>
-              <div className="image-wrap"><img src={p.image} alt={p.title}/><div className="image-shade"/><div className="card-top"><span className="cat-pill">{p.cat}</span><span className="heart">♡</span></div><div className="get-prompt">Get Prompt <span>↗</span></div></div>
-              <div className="card-info"><h3>{p.title}</h3><div className="creator"><span className="small-avatar">{p.creator[0]}</span><span>{p.creator}</span><span className="dot"/> <span>♥ {p.likes.toLocaleString()}</span><span className="views">◉ {p.views.toLocaleString()}</span></div></div>
-            </Link>)}
-          </div>
-          {!filtered.length && <div className="empty"><div>⌕</div><h3>No prompts found</h3><p>Try another keyword or category.</p></div>}
+          <div className="hero-row"><div><div className="eyebrow"><span/> LIVE TRENDS <span className="pulse"/></div><h1>Discover the <em>prompt</em><br/>behind the picture.</h1><p>Find viral AI image ideas, copy the exact prompt, and create your own.</p></div><div className="hero-stats"><strong>{publishedCount.toLocaleString()}</strong><span>published prompts</span></div></div>
+          <div className="section-head"><div><h2>{active}</h2><p>{active === "Viral / Trending" ? "Latest prompts published by the IGTrendy community." : `Popular prompts in ${active}.`}</p></div><div className="sort">Newest <span>⌄</span></div></div>
+
+          {loadingPrompts ? (
+            <div className="empty"><div>◌</div><h3>Loading prompts...</h3><p>Fetching the latest published creations.</p></div>
+          ) : (
+            <>
+              <div className="masonry">
+                {filtered.map(p => <Link href={`/prompt/${p.id}`} className="prompt-card" key={p.id}>
+                  <div className="image-wrap"><img src={p.image} alt={p.title}/><div className="image-shade"/><div className="card-top"><span className="cat-pill">{p.cat}</span><span className="heart">♡</span></div><div className="get-prompt">Get Prompt <span>↗</span></div></div>
+                  <div className="card-info"><h3>{p.title}</h3><div className="creator"><span className="small-avatar">{p.creator[0]?.toUpperCase() || "C"}</span><span>{p.creator}</span><span className="dot"/> <span>♥ {p.likes.toLocaleString()}</span><span className="views">◉ {p.views.toLocaleString()}</span></div></div>
+                </Link>)}
+              </div>
+              {!filtered.length && <div className="empty"><div>✦</div><h3>{prompts.length ? "No prompts found" : "No prompts published yet"}</h3><p>{prompts.length ? "Try another keyword or category." : "Be the first creator to share a prompt with the community."}</p>{!prompts.length && <Link href="/upload">Upload your first prompt →</Link>}</div>}
+            </>
+          )}
         </section>
       </div>
     </main>

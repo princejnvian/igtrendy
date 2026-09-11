@@ -14,7 +14,13 @@ export default function ProfileActions({ profileUsername }: { profileUsername: s
       const { data } = await supabase.auth.getUser();
       const user = data.user;
 
-      if (!user || user.app_metadata?.role !== "admin") {
+      if (!user) {
+        if (mounted) setIsOwnAdminProfile(false);
+        return;
+      }
+
+      const { data: adminCheck } = await supabase.rpc("is_igtrendy_admin");
+      if (!adminCheck) {
         if (mounted) setIsOwnAdminProfile(false);
         return;
       }
