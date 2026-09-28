@@ -32,3 +32,7 @@ Recommended server limits:
 - `DAILY_ARTICLE_LIMIT=5`
 - `DAILY_IMAGE_LIMIT=5`
 - `AUTO_PUBLISH_TRENDS=false`
+
+## AI publishing permissions
+
+If the admin shows `permission denied for table articles`, run `supabase/ai_publishing_permissions_fix.sql` once in the Supabase SQL Editor. Supabase now recommends explicit grants when Data API default grants have been revoked. The server-side `service_role` client remains server-only.

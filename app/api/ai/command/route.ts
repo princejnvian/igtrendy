@@ -182,7 +182,10 @@ export async function POST(request: Request) {
     const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: imageUrl || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };
     const query = existing ? db.from("articles").update(payload).eq("id", existing.id) : db.from("articles").insert(payload);
     const { data: saved, error } = await query.select("id,title,slug,status,cover_image_url").single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      const detail = [error.message, (error as any).hint, (error as any).details].filter(Boolean).join(' | ');
+      throw new Error(`Article save failed: ${detail}`);
+    }
     await db.rpc("record_ai_usage", { p_kind: "article" });
     const warnings:string[] = [];
     if (Array.isArray(article.sources) && saved?.id) {
