@@ -24,7 +24,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const id = String(body.id || "");
     const status = String(body.status || "");
-    if (!id || !["ignored", "queued", "drafted"].includes(status)) return NextResponse.json({ error: "Invalid trend action." }, { status: 400 });
+    if (!id || !["ignored", "queued", "drafted", "published"].includes(status)) return NextResponse.json({ error: "Invalid trend action." }, { status: 400 });
     const { error } = await db.from("trend_queue").update({ status }).eq("id", id);
     if (error) throw new Error(error.message);
     return NextResponse.json({ ok: true });

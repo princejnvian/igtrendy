@@ -3,12 +3,73 @@ import { requireAdmin, serviceClient, slugify } from "@/lib/server";
 
 export const maxDuration = 120;
 
-function extractJson(text: string) {
-  const cleaned = text.replace(/```json|```/g, "").trim();
-  const start = cleaned.indexOf("{"); const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("AI returned an invalid content object.");
-  return JSON.parse(cleaned.slice(start, end + 1));
+function parseStructuredArticle(raw: unknown) {
+  const text = String(raw || '').trim();
+  if (!text) throw new Error('Gemini returned an empty response.');
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+    }
+    throw new Error('Gemini returned malformed JSON.');
+  }
 }
+
+function getInteractionText(data: any) {
+  if (typeof data?.output_text === 'string') return data.output_text;
+  const chunks = (data?.steps || [])
+    .filter((step:any) => step?.type === 'model_output')
+    .flatMap((step:any) => Array.isArray(step?.content) ? step.content : [])
+    .filter((item:any) => item?.type === 'text' && typeof item?.text === 'string')
+    .map((item:any) => item.text);
+  return chunks.join('\n').trim();
+}
+
+const ARTICLE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    slug: { type: 'string' },
+    excerpt: { type: 'string' },
+    category: { type: 'string', enum: ['Gaming','Movies','Web Series','Events','Theories','Explained','Trending'] },
+    tags: { type: 'array', items: { type: 'string' } },
+    content_html: { type: 'string' },
+    sources: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { title: { type: 'string' }, url: { type: 'string' } },
+        required: ['title','url']
+      }
+    },
+    image_prompt: { type: 'string' },
+    story_slides: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { headline: { type: 'string' }, body: { type: 'string' } },
+        required: ['headline','body']
+      }
+    }
+  },
+  required: ['title','slug','excerpt','category','tags','content_html','sources','image_prompt','story_slides']
+};
+
+const GEMINI_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash'
+];
 
 export async function POST(request: Request) {
   try {
@@ -30,120 +91,54 @@ export async function POST(request: Request) {
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
     const prompt = `You are the editorial engine for IGTrendy, a global entertainment and gaming publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), image_prompt, story_slides (array of {headline,body}). Content must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Existing articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
 
-    // Use only current models that Google recommends for new projects.
-    // Ignore stale Vercel values such as gemini-2.5-flash-lite, which is
-    // restricted for new users/projects and caused the previous failure.
-    const currentModels = [
-      "gemini-3.5-flash-lite",
-      "gemini-3.1-flash-lite",
-      "gemini-3.6-flash",
-      "gemini-3.7-flash",
-      "gemini-3.8-flash",
-    ];
-    const configuredModel = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-    const fallbackModels = [
-      currentModels.includes(configuredModel) ? configuredModel : "gemini-3.5-flash-lite",
-      ...currentModels,
-    ].filter((v,i,a)=>v && a.indexOf(v)===i);
-
-    const articleSchema = {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        slug: { type: "string" },
-        excerpt: { type: "string" },
-        category: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
-        content_html: { type: "string" },
-        sources: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string" },
-              url: { type: "string" }
-            },
-            required: ["title", "url"]
-          }
-        },
-        image_prompt: { type: "string" },
-        story_slides: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              headline: { type: "string" },
-              body: { type: "string" }
-            },
-            required: ["headline", "body"]
-          }
-        }
-      },
-      required: ["title", "slug", "excerpt", "category", "tags", "content_html", "sources", "image_prompt", "story_slides"]
-    };
+    const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i && GEMINI_MODELS.includes(v));
 
     let article:any = null;
-    let lastError = "Gemini article generation failed.";
+    let lastError = 'Gemini article generation failed.';
 
-    for (let i=0; i<fallbackModels.length && !article; i++) {
-      const model = fallbackModels[i];
-      // Use the current Interactions API with structured JSON output.
-      // This avoids the legacy generateContent response parsing problem.
+    for (const model of fallbackModels) {
+      if (article) break;
       for (let retry=0; retry<3 && !article; retry++) {
         try {
-          const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-            method:"POST",
-            headers:{"Content-Type":"application/json","x-goog-api-key":key},
-            body:JSON.stringify({
+          const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','x-goog-api-key':key},
+            body: JSON.stringify({
               model,
               input: prompt,
-              response_format: {
-                type: "text",
-                mime_type: "application/json",
-                schema: articleSchema
-              }
+              response_format: { type: 'text', mime_type: 'application/json', schema: ARTICLE_SCHEMA },
+              generation_config: { max_output_tokens: 12000, thinking_level: 'low' }
             })
           });
 
+          const raw = await response.json().catch(()=>null);
           if (!response.ok) {
-            let detail=`HTTP ${response.status}`;
-            try { const e=await response.json(); detail=String(e?.error?.message||detail); } catch {}
-            lastError=`${model}: ${detail}`;
-            if ((response.status===429 || response.status===500 || response.status===502 || response.status===503) && retry<2) {
-              await new Promise(r=>setTimeout(r,1200*(2**retry)));
+            const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
+            lastError = `${model}: ${detail}`;
+            if ([408,429,500,502,503,504].includes(response.status) && retry < 2) {
+              await new Promise(r=>setTimeout(r,1000*(2**retry)));
               continue;
             }
             break;
           }
 
-          const raw=await response.json();
-          const text =
-            String(raw.output_text || "").trim()
-            || (Array.isArray(raw.outputs)
-              ? raw.outputs.map((o:any)=>String(o?.text || o?.content?.[0]?.text || "")).join("").trim()
-              : "")
-            || (Array.isArray(raw.steps)
-              ? raw.steps.flatMap((s:any)=>Array.isArray(s?.content)?s.content:[])
-                  .filter((x:any)=>x?.type==="text")
-                  .map((x:any)=>String(x?.text || ""))
-                  .join("").trim()
-              : "");
-
-          if (!text) {
-            lastError=`${model}: Gemini returned an empty response.`;
+          if (raw?.status && raw.status !== 'completed') {
+            lastError = `${model}: interaction status ${raw.status}.`;
             break;
           }
 
+          const outputText = getInteractionText(raw);
           try {
-            article = extractJson(text);
+            article = parseStructuredArticle(outputText);
           } catch (parseError:any) {
-            lastError=`${model}: ${parseError?.message || "Invalid JSON response."}`;
+            lastError = `${model}: ${parseError?.message || 'Malformed structured output.'}`;
             break;
           }
         } catch (networkError:any) {
-          lastError=`${model}: ${networkError?.message || "Network request failed."}`;
-          if (retry<2) {
-            await new Promise(r=>setTimeout(r,1200*(2**retry)));
+          lastError = `${model}: ${networkError?.message || 'Network request failed.'}`;
+          if (retry < 2) {
+            await new Promise(r=>setTimeout(r,1000*(2**retry)));
             continue;
           }
         }
@@ -189,8 +184,22 @@ export async function POST(request: Request) {
     const { data: saved, error } = await query.select("id,title,slug,status,cover_image_url").single();
     if (error) throw new Error(error.message);
     await db.rpc("record_ai_usage", { p_kind: "article" });
-    if (Array.isArray(article.sources) && saved?.id) { await db.from("article_sources").delete().eq("article_id", saved.id); await db.from("article_sources").insert(article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}))); }
-    if (saved?.id && Array.isArray(article.story_slides) && article.story_slides.length) { await db.from("web_stories").insert({article_id:saved.id,title:article.title,slides:article.story_slides,status,published_at:status === "published" ? new Date().toISOString() : null}); }
-    return NextResponse.json({ ok:true, article:saved, message: status === "published" ? (existing ? "Article updated and published." : "Article published.") : (existing ? "Article updated as draft." : "Article saved as draft.") });
+    const warnings:string[] = [];
+    if (Array.isArray(article.sources) && saved?.id) {
+      const sourceRows = article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}));
+      const sourceDelete = await db.from("article_sources").delete().eq("article_id", saved.id);
+      if (sourceDelete.error) warnings.push(`Sources cleanup: ${sourceDelete.error.message}`);
+      if (sourceRows.length) { const sourceInsert = await db.from("article_sources").insert(sourceRows); if (sourceInsert.error) warnings.push(`Sources save: ${sourceInsert.error.message}`); }
+    }
+    if (saved?.id && Array.isArray(article.story_slides) && article.story_slides.length) {
+      const story = await db.from("web_stories").insert({article_id:saved.id,title:article.title,slides:article.story_slides,status,published_at:status === "published" ? new Date().toISOString() : null});
+      if (story.error) warnings.push(`Web Story save: ${story.error.message}`);
+    }
+    if (body.sourceTrendId) {
+      const trendUpdate = await db.from('trend_queue').update({status}).eq('id', String(body.sourceTrendId));
+      if (trendUpdate.error) warnings.push(`Trend update: ${trendUpdate.error.message}`);
+    }
+    const message = status === "published" ? (existing ? "Article updated and published." : "Article published.") : (existing ? "Article updated as draft." : "Article saved as draft.");
+    return NextResponse.json({ ok:true, article:saved, warnings, message });
   } catch (e:any) { return NextResponse.json({ error:e.message||"Command failed." }, {status: e.message?.includes("Admin") ? 403 : 500}); }
 }
