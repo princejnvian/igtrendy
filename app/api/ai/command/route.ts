@@ -149,7 +149,9 @@ export async function POST(request: Request) {
     article.slug = slugify(article.slug || article.title);
 
     let imageUrl = "";
+    let imageWarning = "";
     const canGenerateImage = body.generateImage !== false && (usage?.image_count || 0) < imageLimit;
+    if (body.generateImage !== false && !canGenerateImage) imageWarning = `Image limit reached (${imageLimit}/day).`;
     if (canGenerateImage) {
       try {
         const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
@@ -170,11 +172,23 @@ export async function POST(request: Request) {
           if (b64) {
             const bytes=Buffer.from(b64,"base64");
             const path=`ai-generated/${crypto.randomUUID()}.png`;
-            const up=await db.storage.from("prompt-images").upload(path,bytes,{contentType:"image/png",upsert:false});
-            if(!up.error){imageUrl=db.storage.from("prompt-images").getPublicUrl(path).data.publicUrl;await db.rpc("record_ai_usage", {p_kind:"image"});}
+            const up=await db.storage.from("article-images").upload(path,bytes,{contentType:"image/png",upsert:false});
+            if(!up.error){
+              imageUrl=db.storage.from("article-images").getPublicUrl(path).data.publicUrl;
+              await db.rpc("record_ai_usage", {p_kind:"image"});
+            } else {
+              imageWarning = `Image upload failed: ${up.error.message}`;
+            }
+          } else {
+            imageWarning = "Gemini returned no image data.";
           }
+        } else {
+          const detail = await img.text().catch(()=>"");
+          imageWarning = `Image generation failed (${img.status})${detail ? `: ${detail.slice(0,240)}` : "."}`;
         }
-      } catch { /* article can still be saved if image generation is temporarily unavailable */ }
+      } catch (imageError:any) {
+        imageWarning = `Image generation failed: ${imageError?.message || "Unknown image error."}`;
+      }
     }
 
     const status = mode === "publish" ? "published" : "draft";
@@ -188,6 +202,7 @@ export async function POST(request: Request) {
     }
     await db.rpc("record_ai_usage", { p_kind: "article" });
     const warnings:string[] = [];
+    if (imageWarning) warnings.push(imageWarning);
     if (Array.isArray(article.sources) && saved?.id) {
       const sourceRows = article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}));
       const sourceDelete = await db.from("article_sources").delete().eq("article_id", saved.id);

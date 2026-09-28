@@ -1,6 +1,3 @@
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 import Link from "next/link";import {supabase}from"@/lib/supabase";
 import SiteHeader from "@/components/site-header";
 export default async function Stories(){const{data}=await supabase.from("web_stories").select("id,title,slides,created_at,articles:article_id(slug)").eq("status","published").order("published_at",{ascending:false}).limit(30);return <main className="site-shell"><SiteHeader /><section className="page-head"><div className="eyebrow">📱 QUICK STORIES</div><h1>Web Stories</h1><p>Short visual explainers generated from our longer stories.</p></section><div className="story-grid">{(data??[]).map((s:any)=><article className="story-card" key={s.id}><span>{(s.slides||[]).length} slides</span><h2>{s.title}</h2><div>{(s.slides||[]).slice(0,3).map((slide:any,i:number)=><p key={i}><b>{slide.headline}</b> {slide.body}</p>)}</div>{s.articles?.slug&&<Link href={`/article/${s.articles.slug}`}>Read full story →</Link>}</article>)}</div></main>}
