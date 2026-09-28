@@ -1,0 +1,13 @@
+IGTrendy Gemini fallback fix
+
+- Article generation now starts with lighter stable Gemini models instead of depending on Gemini 3.8 Flash capacity.
+- If a model returns a transient 408/429/5xx error, the server retries briefly and then switches to another model.
+- Added Gemini 2.5 Flash-Lite and Gemini 2.5 Flash as additional fallbacks.
+- Image generation remains optional/non-fatal: an image failure will not prevent an article from being saved or published.
+- Trend queue status is correctly marked as drafted after both Draft and Publish actions; the article's own status remains draft/published.
+
+Production env:
+GEMINI_API_KEY=your_key
+GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
