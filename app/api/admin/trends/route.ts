@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, serviceClient } from "@/lib/server";
+import { requireAdmin } from "@/lib/server";
 
 export const maxDuration = 120;
 
@@ -245,9 +245,11 @@ async function scanTrends(db: any) {
 
 export async function GET(request: Request) {
   try {
-    const auth = request.headers.get("authorization");
-    const isCron = Boolean(process.env.CRON_SECRET) && auth === `Bearer ${process.env.CRON_SECRET}`;
-    const db = isCron ? serviceClient() : (await requireAdmin(request)).client;
+    // Admin UI reads/scans use the signed-in user's Supabase session.
+    // Do not switch this path to the service-role client: that makes a missing
+    // server-only key break the Scanned Trends screen even though manual admin
+    // scanning can work safely through RLS.
+    const { client: db } = await requireAdmin(request);
     const result = await scanTrends(db);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
