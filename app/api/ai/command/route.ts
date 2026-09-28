@@ -30,34 +30,78 @@ export async function POST(request: Request) {
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
     const prompt = `You are the editorial engine for IGTrendy, a global entertainment and gaming publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), image_prompt, story_slides (array of {headline,body}). Content must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Existing articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
 
-    const configuredModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-    // Use only currently documented model IDs. If one model is busy or returns
-    // malformed JSON, continue to the next model instead of treating that
-    // response as a successful generation.
-    const fallbackModels = [
-      configuredModel,
+    // Use only current models that Google recommends for new projects.
+    // Ignore stale Vercel values such as gemini-2.5-flash-lite, which is
+    // restricted for new users/projects and caused the previous failure.
+    const currentModels = [
       "gemini-3.5-flash-lite",
       "gemini-3.1-flash-lite",
       "gemini-3.6-flash",
       "gemini-3.7-flash",
       "gemini-3.8-flash",
-      "gemini-2.5-flash-lite"
+    ];
+    const configuredModel = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+    const fallbackModels = [
+      currentModels.includes(configuredModel) ? configuredModel : "gemini-3.5-flash-lite",
+      ...currentModels,
     ].filter((v,i,a)=>v && a.indexOf(v)===i);
+
+    const articleSchema = {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        slug: { type: "string" },
+        excerpt: { type: "string" },
+        category: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        content_html: { type: "string" },
+        sources: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              url: { type: "string" }
+            },
+            required: ["title", "url"]
+          }
+        },
+        image_prompt: { type: "string" },
+        story_slides: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              headline: { type: "string" },
+              body: { type: "string" }
+            },
+            required: ["headline", "body"]
+          }
+        }
+      },
+      required: ["title", "slug", "excerpt", "category", "tags", "content_html", "sources", "image_prompt", "story_slides"]
+    };
 
     let article:any = null;
     let lastError = "Gemini article generation failed.";
 
     for (let i=0; i<fallbackModels.length && !article; i++) {
       const model = fallbackModels[i];
-      // Try each model up to 3 times for temporary capacity/rate-limit errors.
+      // Use the current Interactions API with structured JSON output.
+      // This avoids the legacy generateContent response parsing problem.
       for (let retry=0; retry<3 && !article; retry++) {
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
             method:"POST",
             headers:{"Content-Type":"application/json","x-goog-api-key":key},
             body:JSON.stringify({
-              contents:[{role:"user",parts:[{text:prompt}]}],
-              generationConfig:{temperature:0.25,responseMimeType:"application/json"}
+              model,
+              input: prompt,
+              response_format: {
+                type: "text",
+                mime_type: "application/json",
+                schema: articleSchema
+              }
             })
           });
 
@@ -65,7 +109,7 @@ export async function POST(request: Request) {
             let detail=`HTTP ${response.status}`;
             try { const e=await response.json(); detail=String(e?.error?.message||detail); } catch {}
             lastError=`${model}: ${detail}`;
-            if ((response.status===429 || response.status===503) && retry<2) {
+            if ((response.status===429 || response.status===500 || response.status===502 || response.status===503) && retry<2) {
               await new Promise(r=>setTimeout(r,1200*(2**retry)));
               continue;
             }
@@ -73,16 +117,23 @@ export async function POST(request: Request) {
           }
 
           const raw=await response.json();
-          const text = raw.candidates?.[0]?.content?.parts?.map((p:any)=>p.text||"").join("") || "";
+          const text =
+            String(raw.output_text || "").trim()
+            || (Array.isArray(raw.outputs)
+              ? raw.outputs.map((o:any)=>String(o?.text || o?.content?.[0]?.text || "")).join("").trim()
+              : "")
+            || (Array.isArray(raw.steps)
+              ? raw.steps.flatMap((s:any)=>Array.isArray(s?.content)?s.content:[])
+                  .filter((x:any)=>x?.type==="text")
+                  .map((x:any)=>String(x?.text || ""))
+                  .join("").trim()
+              : "");
 
-          if (!text.trim()) {
+          if (!text) {
             lastError=`${model}: Gemini returned an empty response.`;
             break;
           }
 
-          // Some transient/model-side responses can arrive with HTTP 200 but
-          // contain plain text such as "An error occurred...". Treat malformed
-          // JSON as a failed attempt and move to the next model.
           try {
             article = extractJson(text);
           } catch (parseError:any) {
