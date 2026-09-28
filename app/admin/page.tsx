@@ -16,7 +16,7 @@ export default function AdminPage(){
       fetch("/api/admin/trends/queue",{headers:{Authorization:`Bearer ${t}`},cache:"no-store"}),
       supabase.from("articles").select("id,title,slug,status,category,created_at").order("created_at",{ascending:false}).limit(20)
     ]);
-    const tj=await tr.json(); if(tr.ok) setTrends(tj.trends||[]); setArticles(ar.data||[]);
+    const tj=await tr.json(); if(tr.ok) setTrends(tj.trends||[]); if(ar.error) throw new Error(`Articles load failed: ${ar.error.message}`); setArticles(ar.data||[]);
   }
   useEffect(()=>{(async()=>{try{const{data}=await supabase.auth.getSession();if(!data.session){setAuth("signed-out");return}const{data:isAdmin}=await supabase.rpc("is_igtrendy_admin");const{data:p}=await supabase.from("profiles").select("username,full_name").eq("id",data.session.user.id).maybeSingle();setAuth(isAdmin?`admin:${p?.username||p?.full_name||data.session.user.email||"owner"}`:"forbidden");if(isAdmin) await load()}catch{setAuth("forbidden")}})()},[]);
 
