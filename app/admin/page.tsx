@@ -1,246 +1,48 @@
 "use client";
-
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-interface Submission {
-  id: string;
-  title: string;
-  prompt_text: string;
-  image_url: string;
-  status: string;
-  created_at: string;
-  creator_id: string | null;
-  creator_username: string | null;
-  creator_full_name: string | null;
-  category_id: number | null;
-  category_name: string | null;
-  category_slug: string | null;
-}
+type Trend = { id:string; topic:string; category:string; why_now:string; trend_score:number; source_urls:string[]; status:string; scanned_at:string|null };
 
-export default function Admin() {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [workingId, setWorkingId] = useState<string | null>(null);
-  const [published, setPublished] = useState<Submission[]>([]);
-  const [publishedLoading, setPublishedLoading] = useState(true);
+export default function AdminPage(){
+  const [command,setCommand]=useState(""); const [mode,setMode]=useState("draft"); const [loading,setLoading]=useState(false); const [result,setResult]=useState("");
+  const [articles,setArticles]=useState<any[]>([]); const [trends,setTrends]=useState<Trend[]>([]); const [scanLoading,setScanLoading]=useState(false); const [auth,setAuth]=useState("checking");
 
-  async function loadSubmissions() {
-    setLoading(true);
-    setError("");
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !userData.user) {
-      setError("Please sign in with your admin account.");
-      setLoading(false);
-      return;
-    }
-
-    const { data, error: rpcError } = await supabase.rpc(
-      "admin_pending_prompts"
-    );
-
-    if (rpcError) {
-      setError(rpcError.message || "You do not have admin access.");
-      setLoading(false);
-      return;
-    }
-
-    setSubmissions((data ?? []) as Submission[]);
-    setLoading(false);
-
-    const { data: publishedData, error: publishedError } = await supabase
-      .from("prompts")
-      .select(`
-        id, title, prompt_text, image_url, status, created_at, creator_id,
-        profiles:creator_id (username, full_name),
-        categories:category_id (name, slug)
-      `)
-      .eq("status", "published")
-      .order("published_at", { ascending: false, nullsFirst: false });
-
-    if (!publishedError) {
-      setPublished((publishedData ?? []).map((row: any) => {
-        const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-        const category = Array.isArray(row.categories) ? row.categories[0] : row.categories;
-        return {
-          ...row,
-          creator_username: profile?.username ?? null,
-          creator_full_name: profile?.full_name ?? null,
-          category_name: category?.name ?? null,
-          category_slug: category?.slug ?? null,
-          category_id: null,
-        };
-      }));
-    }
-    setPublishedLoading(false);
+  async function token(){ const {data}=await supabase.auth.getSession(); if(!data.session) throw new Error("Please sign in."); return data.session.access_token; }
+  async function load(){
+    const t=await token();
+    const [tr, ar] = await Promise.all([
+      fetch("/api/admin/trends/queue",{headers:{Authorization:`Bearer ${t}`},cache:"no-store"}),
+      supabase.from("articles").select("id,title,slug,status,category,created_at").order("created_at",{ascending:false}).limit(20)
+    ]);
+    const tj=await tr.json(); if(tr.ok) setTrends(tj.trends||[]); setArticles(ar.data||[]);
   }
+  useEffect(()=>{(async()=>{try{const{data}=await supabase.auth.getSession();if(!data.session){setAuth("signed-out");return}const{data:isAdmin}=await supabase.rpc("is_igtrendy_admin");const{data:p}=await supabase.from("profiles").select("username,full_name").eq("id",data.session.user.id).maybeSingle();setAuth(isAdmin?`admin:${p?.username||p?.full_name||data.session.user.email||"owner"}`:"forbidden");if(isAdmin) await load()}catch{setAuth("forbidden")}})()},[]);
 
-  useEffect(() => {
-    loadSubmissions();
-  }, []);
+  async function scanNow(){setResult("");setScanLoading(true);try{const t=await token();const r=await fetch("/api/admin/trends",{method:"POST",headers:{Authorization:`Bearer ${t}`}});const j=await r.json();if(!r.ok)throw new Error(j.error||"Scan failed");setResult(`✓ Scan complete — ${j.count} trends found.`);await load()}catch(e:any){setResult(`✕ ${e.message}`)}finally{setScanLoading(false)}}
+  async function trendAction(id:string,status:string){try{const t=await token();const r=await fetch("/api/admin/trends/queue",{method:"PATCH",headers:{Authorization:`Bearer ${t}`,"Content-Type":"application/json"},body:JSON.stringify({id,status})});if(!r.ok)throw new Error((await r.json()).error||"Action failed");setTrends(x=>x.filter(t=>t.id!==id))}catch(e:any){setResult(`✕ ${e.message}`)}}
+  async function createFromTrend(t:Trend,publish=false){setResult("");setLoading(true);try{const tokenValue=await token();const prompt=`Create ${publish?"and publish":"as a draft"} an original article about this selected IGTrendy trend: ${t.topic}. Category: ${t.category}. Why it is trending: ${t.why_now}. Start by researching the latest reliable information. Use these discovered source URLs as leads, but verify them: ${JSON.stringify(t.source_urls)}. Include useful context, dates, and uncertainty where needed. Do not invent facts.`;const r=await fetch("/api/ai/command",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${tokenValue}`},body:JSON.stringify({command:prompt,mode:publish?"publish":"draft",generateImage:true,sourceTrendId:t.id})});const j=await r.json();if(!r.ok)throw new Error(j.error||"Article generation failed");setResult(`✓ ${j.message} — ${j.article?.title||""}`);await trendAction(t.id,publish?"published":"drafted");await load()}catch(e:any){setResult(`✕ ${e.message}`)}finally{setLoading(false)}}
+  async function run(){setResult("");if(!command.trim())return;setLoading(true);try{const tokenValue=await token();const r=await fetch("/api/ai/command",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${tokenValue}`},body:JSON.stringify({command,mode,generateImage:true})});const j=await r.json();if(!r.ok)throw new Error(j.error||"Command failed");setResult(`✓ ${j.message} — ${j.article?.title||""}`);setCommand("");await load()}catch(e:any){setResult(`✕ ${e.message}`)}finally{setLoading(false)}}
 
-  async function moderate(id: string, action: "publish" | "reject") {
-    setWorkingId(id);
-    setError("");
-
-    const { error: rpcError } = await supabase.rpc("admin_moderate_prompt", {
-      p_prompt_id: id,
-      p_action: action,
-    });
-
-    if (rpcError) {
-      setError(rpcError.message || "Could not update this submission.");
-      setWorkingId(null);
-      return;
-    }
-
-    setSubmissions((current) => current.filter((item) => item.id !== id));
-    setWorkingId(null);
-  }
-
-  async function deletePublished(id: string) {
-    const confirmed = window.confirm("Remove this published prompt from IGTrendy? This cannot be undone.");
-    if (!confirmed) return;
-
-    setWorkingId(id);
-    setError("");
-
-    const { error: rpcError } = await supabase.rpc("admin_delete_prompt", {
-      p_prompt_id: id,
-    });
-
-    if (rpcError) {
-      setError(rpcError.message || "Could not remove this prompt.");
-      setWorkingId(null);
-      return;
-    }
-
-    setPublished((current) => current.filter((item) => item.id !== id));
-    setWorkingId(null);
-  }
-
-  return (
-    <main className="admin-page">
-      <header className="detail-nav">
-        <Link href="/">← Site</Link>
-        <strong>IGTrendy Studio</strong>
-        <span>Admin</span>
-      </header>
-
-      <div className="admin-wrap">
-        <div className="eyebrow"><span /> MODERATION QUEUE</div>
-        <h1>Review submissions.</h1>
-        <p className="muted">
-          Approve quality prompts before they appear publicly.
-        </p>
-
-        <div className="admin-tabs">
-          Pending <span>{submissions.length}</span>
-        </div>
-
-        {error && (
-          <div className="admin-prompt" style={{ marginBottom: 20 }}>
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="submission">
-            <div>
-              <h2>Loading moderation queue…</h2>
-              <p className="muted">Checking your admin permissions and submissions.</p>
-            </div>
-          </div>
-        ) : submissions.length === 0 ? (
-          <div className="submission">
-            <div>
-              <span className="detail-cat">ALL CLEAR</span>
-              <h2>No pending submissions</h2>
-              <p className="muted">New uploads will appear here after users submit them for review.</p>
-            </div>
-          </div>
-        ) : (
-          submissions.map((submission) => (
-            <div className="submission" key={submission.id}>
-              <div className="admin-thumb">
-                <img src={submission.image_url} alt={submission.title} />
-              </div>
-
-              <div>
-                <span className="detail-cat">
-                  {submission.category_name ?? "Uncategorized"}
-                </span>
-                <h2>{submission.title}</h2>
-                <p>
-                  Submitted by <b>{submission.creator_full_name || submission.creator_username || "Creator"}</b>
-                  {submission.creator_username ? ` · @${submission.creator_username}` : ""}
-                  {` · ${new Date(submission.created_at).toLocaleString()}`}
-                </p>
-
-                <div className="admin-prompt">{submission.prompt_text}</div>
-
-                <div className="admin-buttons">
-                  <button
-                    className="reject"
-                    disabled={workingId === submission.id}
-                    onClick={() => moderate(submission.id, "reject")}
-                  >
-                    {workingId === submission.id ? "Working…" : "Reject"}
-                  </button>
-                  <button
-                    disabled={workingId === submission.id}
-                    onClick={() => moderate(submission.id, "publish")}
-                  >
-                    {workingId === submission.id ? "Working…" : "Publish"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-
-        <div className="admin-tabs published-tab">Published <span>{published.length}</span></div>
-
-        {publishedLoading ? (
-          <div className="submission">
-            <div><h2>Loading published prompts…</h2></div>
-          </div>
-        ) : published.length === 0 ? (
-          <div className="submission">
-            <div><h2>No published prompts</h2><p className="muted">Published prompts will appear here.</p></div>
-          </div>
-        ) : (
-          published.map((submission) => (
-            <div className="submission published-submission" key={submission.id}>
-              <div className="admin-thumb">
-                <img src={submission.image_url} alt={submission.title} />
-              </div>
-              <div>
-                <span className="detail-cat">{submission.category_name ?? "Uncategorized"}</span>
-                <h2>{submission.title}</h2>
-                <p>
-                  Published by <b>{submission.creator_full_name || submission.creator_username || "Creator"}</b>
-                  {submission.creator_username ? ` · @${submission.creator_username}` : ""}
-                </p>
-                <div className="admin-prompt">{submission.prompt_text}</div>
-                <div className="admin-buttons">
-                  <button
-                    className="reject"
-                    disabled={workingId === submission.id}
-                    onClick={() => deletePublished(submission.id)}
-                  >
-                    {workingId === submission.id ? "Removing…" : "Remove from Website"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </main>
-  );
+  if(auth==="checking")return <main className="admin-modern"><div className="admin-loading">Checking Studio access…</div></main>;
+  if(auth==="signed-out")return <main className="admin-modern"><div className="admin-loading"><h1>Studio login required</h1><Link href="/login" className="primary-btn">Sign in</Link></div></main>;
+  if(auth==="forbidden")return <main className="admin-modern"><div className="admin-loading"><h1>Admin access required</h1><p>Your account is not marked as an admin.</p></div></main>;
+  return <main className="admin-modern"><header className="admin-top"><Link href="/" className="logo">✦ IG<span>TRENDY</span></Link><div><span>👑 {auth.replace("admin:","")}</span><Link href="/">View site</Link></div></header><div className="admin-grid"><aside className="admin-side"><div className="eyebrow">STUDIO</div><h2>Control room</h2><nav>
+<a className="active" href="#command-center">🤖 AI Command Center</a>
+<a href="#articles">📝 Articles</a>
+<a href="#scanned-trends">🔥 Scanned Trends</a>
+<a href="/stories">📱 Web Stories</a>
+<a href="/prompts">🎨 AI Prompts</a>
+<a href="#analytics">📊 Analytics</a>
+</nav><div className="safety-box"><b>AI safety</b><p>Scanner only finds trends. It never creates articles or images automatically. Generation starts only after you choose a trend.</p></div></aside><section className="command-panel">
+    <div id="command-center" />
+    <div id="scanned-trends" className="eyebrow">SCANNED TRENDS</div><div className="trend-head"><div><h1>Choose what deserves an article.</h1><p className="lead">The scanner runs twice a day and can also be started manually. It only queues trends — no articles or images are generated by the scanner.</p></div><button className="primary-btn" onClick={scanNow} disabled={scanLoading}>{scanLoading?"Scanning…":"🔎 Scan now"}</button></div>
+    {result&&<div className={`command-result ${result.startsWith("✕")?"bad":""}`}>{result}</div>}
+    <div className="trend-list">{trends.length===0?<div className="empty-state"><b>No queued trends yet.</b><span>Run a scan to discover current gaming, movie, web-series and event topics.</span></div>:trends.map(t=><article className="trend-card" key={t.id}><div className="trend-score">{t.trend_score}<small>/100</small></div><div className="trend-main"><div className="trend-meta"><span>{t.category}</span><span>{t.scanned_at?new Date(t.scanned_at).toLocaleString():"New"}</span></div><h3>{t.topic}</h3><p>{t.why_now}</p><div className="trend-sources">{(t.source_urls||[]).slice(0,3).map((u,i)=><a key={i} href={u} target="_blank" rel="noreferrer">Source {i+1} ↗</a>)}</div><div className="trend-actions"><button className="primary-btn" disabled={loading} onClick={()=>createFromTrend(t,false)}>📝 Create draft + image</button><button className="secondary-btn" disabled={loading} onClick={()=>createFromTrend(t,true)}>🚀 Create & publish</button><button className="ghost-btn" onClick={()=>trendAction(t.id,"ignored")}>Ignore</button></div></div></article>)}</div>
+    <div className="command-divider"><div className="eyebrow">MANUAL COMMAND</div><h2>AI Command Center</h2></div><textarea value={command} onChange={e=>setCommand(e.target.value)} placeholder={'Example: Research the latest GTA 6 update and create an original article.'}/><div className="command-actions"><select value={mode} onChange={e=>setMode(e.target.value)}><option value="draft">Save as draft</option><option value="publish">Publish automatically</option></select><button className="primary-btn" onClick={run} disabled={loading}>{loading?"AI is working…":"Run command →"}</button></div>
+    <div className="quick-commands"><button onClick={()=>setCommand("Find the biggest useful gaming trend today and save an original article as a draft with sources and one cover image.")}>🎮 Gaming trend</button><button onClick={()=>setCommand("Find the most important movie or web-series update today and save a factual article as a draft with sources and one cover image.")}>🎬 Entertainment trend</button><button onClick={()=>setCommand("Find a major upcoming global event worth covering and create a useful guide as a draft with dates and reliable sources.")}>🏆 Event guide</button></div>
+    <div id="analytics" className="admin-metrics" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:12,marginTop:32}}><div className="metric-card"><span>Queued trends</span><b>{trends.filter(t=>t.status==="queued").length}</b></div><div className="metric-card"><span>Recent articles</span><b>{articles.length}</b></div><div className="metric-card"><span>Draft / published</span><b>{articles.filter(a=>a.status==="draft").length} / {articles.filter(a=>a.status==="published").length}</b></div></div>
+    <div id="articles" className="recent"><div className="section-title"><div><div className="eyebrow">CONTENT</div><h2>Recent articles</h2></div><Link href="/trending">Public site →</Link></div>{articles.map(a=><div className="admin-article" key={a.id}><div><b>{a.title}</b><span>{a.category} · {a.status}</span></div><Link href={`/article/${a.slug}`}>Open →</Link></div>)}</div>
+  </section></div></main>
 }

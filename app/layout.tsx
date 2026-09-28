@@ -7,56 +7,14 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://igtrendy.in"),
-  title: {
-    default: "IGTrendy — Viral AI Prompts & AI Image Ideas",
-    template: "%s | IGTrendy",
-  },
-  description:
-    "Discover viral AI image prompts, 80s retro photo prompts, cinematic portraits, Instagram styles and more. Copy prompts and create your own images on IGTrendy.",
-  keywords: [
-    "AI prompts",
-    "AI image prompts",
-    "viral AI prompts",
-    "AI photo prompts",
-    "AI portrait prompts",
-    "80s retro AI photo prompt",
-    "Instagram AI prompts",
-    "cinematic AI prompts",
-    "AI image ideas",
-    "IGTrendy",
-  ],
+  title: { default: "IGTrendy — What's Trending Now", template: "%s | IGTrendy" },
+  description: "Trending games, movies, web series, events, theories, explained stories and AI image prompts.",
   alternates: { canonical: "https://igtrendy.in" },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-      "max-video-preview": -1,
-    },
-  },
-  openGraph: {
-    type: "website",
-    url: "https://igtrendy.in",
-    siteName: "IGTrendy",
-    title: "IGTrendy — Viral AI Prompts & AI Image Ideas",
-    description:
-      "Discover viral AI image prompts, copy prompts and create your own AI images.",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "IGTrendy — Viral AI Prompts & AI Image Ideas",
-    description:
-      "Discover viral AI image prompts, copy prompts and create your own AI images.",
-  },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 } },
+  openGraph: { type: "website", siteName: "IGTrendy", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
+  twitter: { card: "summary_large_image", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body>
-    </html>
-  );
+  return <html lang="en"><body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body></html>;
 }
