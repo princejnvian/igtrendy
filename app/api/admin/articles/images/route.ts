@@ -8,7 +8,7 @@ async function generateImage(key:string, title:string, category:string, excerpt:
     body: JSON.stringify({
       model: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
       input: `Create a polished editorial cover image for an English entertainment news website. Topic: ${title}. Category: ${category}. Context: ${excerpt}. Create a cinematic, realistic, professional 16:9 hero image. Do not add logos, watermarks, captions, headlines, or readable text.`,
-      response_format: { type: "image", mime_type: "image/png", aspect_ratio: "16:9", image_size: "1K" }
+      response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: "16:9", image_size: "1K" }
     })
   });
 
@@ -51,8 +51,8 @@ export async function POST(request: Request) {
     for (const article of articles.slice(0, remaining)) {
       try {
         const bytes = await generateImage(key, article.title, article.category || "Trending", article.excerpt || "");
-        const path = `ai-generated/${article.id}-${crypto.randomUUID()}.png`;
-        const upload = await db.storage.from("article-images").upload(path, bytes, { contentType:"image/png", upsert:false });
+        const path = `ai-generated/${article.id}-${crypto.randomUUID()}.jpg`;
+        const upload = await db.storage.from("article-images").upload(path, bytes, { contentType:"image/jpeg", upsert:false });
         if (upload.error) throw new Error(`Storage upload failed: ${upload.error.message}`);
         const publicUrl = db.storage.from("article-images").getPublicUrl(path).data.publicUrl;
         const update = await db.from("articles").update({ cover_image_url: publicUrl, updated_at: new Date().toISOString() }).eq("id", article.id);

@@ -66,8 +66,6 @@ const GEMINI_MODELS = [
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
   'gemini-3.5-flash'
 ];
 
@@ -99,7 +97,7 @@ export async function POST(request: Request) {
 
     for (const model of fallbackModels) {
       if (article) break;
-      for (let retry=0; retry<3 && !article; retry++) {
+      for (let retry=0; retry<2 && !article; retry++) {
         try {
           const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
             method: 'POST',
@@ -116,7 +114,7 @@ export async function POST(request: Request) {
           if (!response.ok) {
             const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
             lastError = `${model}: ${detail}`;
-            if ([408,429,500,502,503,504].includes(response.status) && retry < 2) {
+            if ([408,429,500,502,503,504].includes(response.status) && retry < 1) {
               await new Promise(r=>setTimeout(r,1000*(2**retry)));
               continue;
             }
@@ -137,8 +135,8 @@ export async function POST(request: Request) {
           }
         } catch (networkError:any) {
           lastError = `${model}: ${networkError?.message || 'Network request failed.'}`;
-          if (retry < 2) {
-            await new Promise(r=>setTimeout(r,1000*(2**retry)));
+          if (retry < 1) {
+            await new Promise(r=>setTimeout(r,1500));
             continue;
           }
         }
@@ -161,7 +159,7 @@ export async function POST(request: Request) {
           body:JSON.stringify({
             model:imageModel,
             input:String(article.image_prompt || article.title).slice(0,3000),
-            response_format:{type:"image",mime_type:"image/png",aspect_ratio:"16:9",image_size:"1K"}
+            response_format:{type:"image",mime_type:"image/jpeg",aspect_ratio:"16:9",image_size:"1K"}
           })
         });
         if (img.ok) {
@@ -171,8 +169,8 @@ export async function POST(request: Request) {
             || data.output?.find((x:any)=>x?.type==="image")?.data;
           if (b64) {
             const bytes=Buffer.from(b64,"base64");
-            const path=`ai-generated/${crypto.randomUUID()}.png`;
-            const up=await db.storage.from("article-images").upload(path,bytes,{contentType:"image/png",upsert:false});
+            const path=`ai-generated/${crypto.randomUUID()}.jpg`;
+            const up=await db.storage.from("article-images").upload(path,bytes,{contentType:"image/jpeg",upsert:false});
             if(!up.error){
               imageUrl=db.storage.from("article-images").getPublicUrl(path).data.publicUrl;
               await db.rpc("record_ai_usage", {p_kind:"image"});
