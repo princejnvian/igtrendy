@@ -1,4 +1,40 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import SiteHeader from "@/components/site-header";
-export default async function TrendingPage(){ const {data}=await supabase.from("articles").select("id,title,slug,excerpt,cover_image_url,category,published_at,views").eq("status","published").order("published_at",{ascending:false}).limit(50); return <main className="site-shell"><SiteHeader /><section className="page-head"><div className="eyebrow">● TRENDING NOW</div><h1>What's happening right now?</h1><p>Fresh stories across gaming, movies, shows and events.</p></section><div className="article-list">{(data??[]).map((a:any)=><Link className="article-row" href={`/article/${a.slug}`} key={a.id}>{a.cover_image_url?<img src={a.cover_image_url} alt=""/>:<div className="row-placeholder">✦</div>}<div><span>{a.category}</span><h2>{a.title}</h2><p>{a.excerpt}</p><small>{new Date(a.published_at).toLocaleDateString()} · {a.views||0} views</small></div></Link>)}</div></main> }
+import { getArticleCardImage } from "@/lib/article-media";
+
+export default async function TrendingPage() {
+  const { data } = await supabase
+    .from("articles")
+    .select("id,title,slug,excerpt,cover_image_url,content_html,category,published_at,views")
+    .eq("status", "published")
+    .order("published_at", { ascending: false })
+    .limit(50);
+
+  return (
+    <main className="site-shell">
+      <SiteHeader />
+      <section className="page-head">
+        <div className="eyebrow">● TRENDING NOW</div>
+        <h1>What's happening right now?</h1>
+        <p>Fresh stories across gaming, movies, shows and events.</p>
+      </section>
+      <div className="article-list">
+        {(data ?? []).map((a: any) => {
+          const imageUrl = getArticleCardImage(a.cover_image_url, a.content_html);
+          return (
+            <Link className="article-row" href={`/article/${a.slug}`} key={a.id}>
+              {imageUrl ? <img src={imageUrl} alt="" /> : <div className="row-placeholder">✦</div>}
+              <div>
+                <span>{a.category}</span>
+                <h2>{a.title}</h2>
+                <p>{a.excerpt}</p>
+                <small>{new Date(a.published_at).toLocaleDateString()} · {a.views || 0} views</small>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </main>
+  );
+}
