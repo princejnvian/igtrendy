@@ -39,10 +39,26 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       updated_at: new Date().toISOString(),
       published_at: status === "published" ? (body.published_at || new Date().toISOString()) : null
     };
-    const { data, error } = await db.from("articles").update(update).eq("id", id).select("id,title,slug,status,cover_image_url,updated_at").single();
+    const { data, error } = await db.from("articles").update(update).eq("id", id).select("id,title,slug,status,cover_image_url,updated_at,published_at,views,category").single();
     if (error) throw new Error(`Article save failed: ${error.message}`);
     return NextResponse.json({ ok: true, article: data });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Article save failed." }, { status: e?.message?.includes("Admin") ? 403 : 500 });
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin(request);
+    const { id } = await params;
+    const db = serviceClient();
+    const { data: article, error: lookupError } = await db.from("articles").select("id,title").eq("id", id).maybeSingle();
+    if (lookupError) throw new Error(`Article lookup failed: ${lookupError.message}`);
+    if (!article) return NextResponse.json({ error: "Article not found." }, { status: 404 });
+    const { error } = await db.from("articles").delete().eq("id", id);
+    if (error) throw new Error(`Article delete failed: ${error.message}`);
+    return NextResponse.json({ ok: true, deletedId: id, title: article.title });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Article delete failed." }, { status: e?.message?.includes("Admin") ? 403 : 500 });
   }
 }
