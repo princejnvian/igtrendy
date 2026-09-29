@@ -48,7 +48,6 @@ const ARTICLE_SCHEMA = {
         required: ['title','url']
       }
     },
-    image_prompt: { type: 'string' },
     story_slides: {
       type: 'array',
       items: {
@@ -59,7 +58,7 @@ const ARTICLE_SCHEMA = {
       }
     }
   },
-  required: ['title','slug','excerpt','category','tags','content_html','sources','image_prompt','story_slides']
+  required: ['title','slug','excerpt','category','tags','content_html','sources','story_slides']
 };
 
 const GEMINI_MODELS = [
@@ -81,13 +80,12 @@ export async function POST(request: Request) {
 
     const db = serviceClient();
     const today = new Date().toISOString().slice(0, 10);
-    const { data: usage } = await db.from("ai_usage_daily").select("article_count,image_count").eq("usage_date", today).maybeSingle();
+    const { data: usage } = await db.from("ai_usage_daily").select("article_count").eq("usage_date", today).maybeSingle();
     const articleLimit = Number(process.env.DAILY_ARTICLE_LIMIT || 5);
-    const imageLimit = Number(process.env.DAILY_IMAGE_LIMIT || 5);
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
-    const prompt = `You are the editorial engine for IGTrendy, a global entertainment and gaming publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), image_prompt, story_slides (array of {headline,body}). Content must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Existing articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
+    const prompt = `You are the editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), story_slides (array of {headline,body}).\n\nARTICLE LENGTH: Write a substantial article of roughly 1400-2200 words when the topic supports it. Do not pad with repetition. Build a clear narrative with a strong opening, useful context, multiple h2/h3 sections, specific dates/names/details where verified, what is confirmed vs unconfirmed, and a concise conclusion. Include practical context or a timeline when useful.\n\nCONTENT: The article must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Do not generate or depend on images; images will be added manually by the editor later.\n\nWEB STORY: Also create 6-10 concise story slides from the article. Each slide must have a punchy headline and useful body text. Do not include image fields; the editor will add images manually later.\n\nExisting articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
 
     const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i && GEMINI_MODELS.includes(v));
@@ -146,52 +144,11 @@ export async function POST(request: Request) {
     if (!article) throw new Error(`Gemini article generation failed. ${lastError}`);
     article.slug = slugify(article.slug || article.title);
 
-    let imageUrl = "";
-    let imageWarning = "";
-    const canGenerateImage = body.generateImage !== false && (usage?.image_count || 0) < imageLimit;
-    if (body.generateImage !== false && !canGenerateImage) imageWarning = `Image limit reached (${imageLimit}/day).`;
-    if (canGenerateImage) {
-      try {
-        const imageModel = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image";
-        const img = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-          method:"POST",
-          headers:{"Content-Type":"application/json","x-goog-api-key":key},
-          body:JSON.stringify({
-            model:imageModel,
-            input:String(article.image_prompt || article.title).slice(0,3000),
-            response_format:{type:"image",mime_type:"image/jpeg",aspect_ratio:"16:9",image_size:"1K"}
-          })
-        });
-        if (img.ok) {
-          const data=await img.json();
-          const b64 = data.output_image?.data
-            || data.steps?.flatMap((step:any)=>Array.isArray(step?.content)?step.content:[])?.find((x:any)=>x?.type==="image")?.data
-            || data.output?.find((x:any)=>x?.type==="image")?.data;
-          if (b64) {
-            const bytes=Buffer.from(b64,"base64");
-            const path=`ai-generated/${crypto.randomUUID()}.jpg`;
-            const up=await db.storage.from("article-images").upload(path,bytes,{contentType:"image/jpeg",upsert:false});
-            if(!up.error){
-              imageUrl=db.storage.from("article-images").getPublicUrl(path).data.publicUrl;
-              await db.rpc("record_ai_usage", {p_kind:"image"});
-            } else {
-              imageWarning = `Image upload failed: ${up.error.message}`;
-            }
-          } else {
-            imageWarning = "Gemini returned no image data.";
-          }
-        } else {
-          const detail = await img.text().catch(()=>"");
-          imageWarning = `Image generation failed (${img.status})${detail ? `: ${detail.slice(0,240)}` : "."}`;
-        }
-      } catch (imageError:any) {
-        imageWarning = `Image generation failed: ${imageError?.message || "Unknown image error."}`;
-      }
-    }
+    const imageUrl = "";
 
     const status = mode === "publish" ? "published" : "draft";
-    const { data: existing } = await db.from("articles").select("id").eq("slug", article.slug).maybeSingle();
-    const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: imageUrl || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };
+    const { data: existing } = await db.from("articles").select("id,cover_image_url").eq("slug", article.slug).maybeSingle();
+    const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: existing?.cover_image_url || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };
     const query = existing ? db.from("articles").update(payload).eq("id", existing.id) : db.from("articles").insert(payload);
     const { data: saved, error } = await query.select("id,title,slug,status,cover_image_url").single();
     if (error) {
@@ -200,7 +157,6 @@ export async function POST(request: Request) {
     }
     await db.rpc("record_ai_usage", { p_kind: "article" });
     const warnings:string[] = [];
-    if (imageWarning) warnings.push(imageWarning);
     if (Array.isArray(article.sources) && saved?.id) {
       const sourceRows = article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}));
       const sourceDelete = await db.from("article_sources").delete().eq("article_id", saved.id);
@@ -208,7 +164,11 @@ export async function POST(request: Request) {
       if (sourceRows.length) { const sourceInsert = await db.from("article_sources").insert(sourceRows); if (sourceInsert.error) warnings.push(`Sources save: ${sourceInsert.error.message}`); }
     }
     if (saved?.id && Array.isArray(article.story_slides) && article.story_slides.length) {
-      const story = await db.from("web_stories").insert({article_id:saved.id,title:article.title,slides:article.story_slides,status,published_at:status === "published" ? new Date().toISOString() : null});
+      const { data: existingStory } = await db.from("web_stories").select("id").eq("article_id", saved.id).maybeSingle();
+      const storyPayload = { article_id:saved.id, title:article.title, slides:article.story_slides, status, published_at:status === "published" ? new Date().toISOString() : null };
+      const story = existingStory
+        ? await db.from("web_stories").update(storyPayload).eq("id", existingStory.id)
+        : await db.from("web_stories").insert(storyPayload);
       if (story.error) warnings.push(`Web Story save: ${story.error.message}`);
     }
     if (body.sourceTrendId) {
