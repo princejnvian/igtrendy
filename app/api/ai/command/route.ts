@@ -62,6 +62,10 @@ const ARTICLE_SCHEMA = {
 };
 
 const GEMINI_MODELS = [
+  // Lite models have much higher free-tier daily request limits and are the
+  // preferred fallback when a standard Flash model is rate-limited.
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -87,8 +91,8 @@ export async function POST(request: Request) {
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
     const prompt = `You are the editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), story_slides (array of {headline,body}).\n\nARTICLE LENGTH: Write a substantial article of roughly 1400-2200 words when the topic supports it. Do not pad with repetition. Build a clear narrative with a strong opening, useful context, multiple h2/h3 sections, specific dates/names/details where verified, what is confirmed vs unconfirmed, and a concise conclusion. Include practical context or a timeline when useful.\n\nCONTENT: The article must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Do not generate or depend on images; images will be added manually by the editor later.\n\nWEB STORY: Also create 6-10 concise story slides from the article. Each slide must have a punchy headline and useful body text. Do not include image fields; the editor will add images manually later.\n\nExisting articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
 
-    const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i && GEMINI_MODELS.includes(v));
+    const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i);
 
     let article:any = null;
     let lastError = 'Gemini article generation failed.';
@@ -112,7 +116,13 @@ export async function POST(request: Request) {
           if (!response.ok) {
             const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
             lastError = `${model}: ${detail}`;
-            if ([408,429,500,502,503,504].includes(response.status) && retry < 1) {
+            if (response.status === 429) {
+              const isDailyLimit = /requests per day|limit:\s*\d+\s*requests per day/i.test(detail);
+              if (isDailyLimit) break;
+              if (retry < 1) { await new Promise(r=>setTimeout(r,1200)); continue; }
+              break;
+            }
+            if ([408,500,502,503,504].includes(response.status) && retry < 1) {
               await new Promise(r=>setTimeout(r,1000*(2**retry)));
               continue;
             }
