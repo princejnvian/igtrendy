@@ -160,3 +160,11 @@
 .auth-logo-image{display:block;width:190px;height:auto;max-height:50px}
 .logo-image-link:hover,.brand-image-link:hover{opacity:.92}
 @media(max-width:640px){.site-logo-image{width:138px}.auth-logo-image{width:175px}.admin-logo-image{width:140px}}
+
+
+/* AI editorial media */
+.article-media{margin:30px 0 34px;padding:0;display:block}
+.article-media img{display:block;width:100%;height:auto;max-height:620px;object-fit:cover;border-radius:16px;background:#f1f5f9}
+.article-media figcaption{margin-top:9px;font-size:12px;line-height:1.5;color:#64748b}
+.article-media figcaption a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+.article-media>a{display:block;text-decoration:none}
