@@ -118,14 +118,15 @@ const ARTICLE_SCHEMA = {
 };
 
 const GEMINI_MODELS = [
-  // Lite models have much higher free-tier daily request limits and are the
-  // preferred fallback when a standard Flash model is rate-limited.
+  // Keep the fallback chain focused on currently supported Flash/Lite variants.
+  // A 429 on one model should immediately move to the next model instead of
+  // burning retries against the same exhausted quota.
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
-  'gemini-3.8-flash',
-  'gemini-3.7-flash',
+  'gemini-3.5-flash',
   'gemini-3.6-flash',
-  'gemini-3.5-flash'
+  'gemini-3.7-flash',
+  'gemini-3.8-flash'
 ];
 
 export async function POST(request: Request) {
@@ -169,8 +170,16 @@ Existing articles that may be updated: ${JSON.stringify(recentArticles || [])}. 
 
 Command to execute: ${command}`;
 
-    const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-    const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i);
+    const configuredModel = process.env.GEMINI_MODEL || '';
+    // Prefer Lite first for the automated publishing workflow. If an older
+    // env var still points at a standard Flash model, it remains in the chain
+    // but no longer blocks the Lite fallback.
+    const fallbackModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      configuredModel,
+      ...GEMINI_MODELS
+    ].filter((v,i,a)=>v && a.indexOf(v)===i);
 
     let article:any = null;
     let lastError = 'Gemini article generation failed.';
@@ -196,9 +205,10 @@ Command to execute: ${command}`;
             const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
             lastError = `${model}: ${detail}`;
             if (response.status === 429) {
-              const isDailyLimit = /requests per day|limit:\s*\d+\s*requests per day/i.test(detail);
-              if (isDailyLimit) break;
-              if (retry < 1) { await new Promise(r=>setTimeout(r,1200)); continue; }
+              // 429 means this model is currently rate/quota limited. Move to
+              // the next model instead of retrying the same exhausted quota.
+              // Google recommends backoff for transient 429s, but retries do
+              // not help when the model's daily quota is already exhausted.
               break;
             }
             if ([408,500,502,503,504].includes(response.status) && retry < 1) {
@@ -230,7 +240,11 @@ Command to execute: ${command}`;
       }
     }
 
-    if (!article) throw new Error(`Gemini article generation failed. ${lastError}`);
+    if (!article) {
+      throw new Error(
+        `Gemini article generation failed after trying fallback models. ${lastError}`
+      );
+    }
     article.slug = slugify(article.slug || article.title);
 
     const imageCandidates = await findOpenverseImages(Array.isArray(article.image_queries) ? article.image_queries : [article.title], 3);
