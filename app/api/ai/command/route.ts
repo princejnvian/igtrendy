@@ -254,6 +254,20 @@ const ARTICLE_SCHEMA = {
   required: ['title','slug','excerpt','category','tags','content_html','sources','image_queries','story_slides']
 };
 
+function validateGeneratedArticle(article: any) {
+  const problems: string[] = [];
+  const bodyText = String(article?.content_html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const validSources = Array.isArray(article?.sources) ? article.sources.filter((source:any) => /^https?:\/\//i.test(String(source?.url || ""))) : [];
+  if (!article || typeof article !== "object") problems.push("No article object returned.");
+  if (!String(article?.title || "").trim()) problems.push("Missing title.");
+  if (!String(article?.excerpt || "").trim()) problems.push("Missing excerpt.");
+  if (bodyText.length < 1800) problems.push("Article body is too short.");
+  if (validSources.length < 3) problems.push("Fewer than 3 valid source URLs.");
+  if (!Array.isArray(article?.story_slides) || article.story_slides.length < 6) problems.push("Web Story has fewer than 6 slides.");
+  if (!Array.isArray(article?.image_queries) || article.image_queries.length < 2) problems.push("Fewer than 2 image queries.");
+  if (problems.length) throw new Error(`Article validation failed: ${problems.join(" ")}`);
+}
+
 const GEMINI_MODELS = [
   // Keep the fallback chain focused on currently supported Flash/Lite variants.
   // A 429 on one model should immediately move to the next model instead of
@@ -426,6 +440,7 @@ Command to execute: ${command}`;
     const storedImages:any[] = storedResults.filter(Boolean);
     article.content_html = injectArticleImages(article.content_html, storedImages);
     const imageUrl = storedImages[0]?.url || "";
+    if (mode === "publish" && !imageUrl) throw new Error("Article validation failed: no openly-licensed cover image could be sourced.");
 
     const status = mode === "publish" ? "published" : "draft";
     const { data: existing } = await db.from("articles").select("id,cover_image_url").eq("slug", article.slug).maybeSingle();

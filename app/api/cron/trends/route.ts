@@ -39,20 +39,31 @@ export async function GET(request: Request) {
 
     const { data: trends, error: trendError } = await db
       .from("trend_queue")
-      .select("id,topic,category,why_now,trend_score,source_urls,status,scanned_at")
+      .select("id,topic,slug,category,why_now,trend_score,source_urls,status,scanned_at")
       .eq("status", "queued")
       .order("trend_score", { ascending: false })
       .order("scanned_at", { ascending: false })
       .limit(Math.min(10, remaining));
     if (trendError) throw new Error(`Auto-publish queue read failed: ${trendError.message}`);
 
-    const selected = (trends || []).slice(0, remaining);
+    // Cross-day duplicate protection: if a fresh queue item shares a source URL
+    // with any already-published trend, do not publish it again.
+    const { data: publishedTrends } = await db.from("trend_queue").select("source_urls").eq("status", "published").limit(500);
+    const publishedSources = new Set((publishedTrends || []).flatMap((row:any) => Array.isArray(row.source_urls) ? row.source_urls : []).filter(Boolean));
+    const selected = (trends || []).filter((trend:any) => {
+      const sources = Array.isArray(trend.source_urls) ? trend.source_urls : [];
+      return !sources.some((url:string) => publishedSources.has(url));
+    }).slice(0, remaining);
     if (!selected.length) {
       return NextResponse.json({ ok: true, published: 0, message: "No queued trends available after today's scan.", scan: scanData });
     }
 
-    // Generate in parallel so five articles do not consume five sequential
-    // model timeouts. Each child request still has its own 300s function limit.
+    // Claim the queue rows first so overlapping manual/cron runs cannot publish
+    // the same trend twice. Failed claims are left queued for the next run.
+    await db.from("trend_queue").update({ status: "processing" }).in("id", selected.map((t:any) => t.id));
+
+    // Generate independently in parallel: one failed article must never stop the
+    // other four. Successful articles become published inside the AI route.
     const results = await Promise.allSettled(selected.map(async (trend: any) => {
       const command = `Automatically publish today's IGTrendy article about: ${trend.topic}\n\nCategory: ${trend.category}\nWhy now: ${trend.why_now}\nSource URLs from the trend scanner: ${JSON.stringify(trend.source_urls || [])}\n\nUse these URLs as starting points, verify current facts with live web research, write the complete article, source list and web story, and publish it. Do not mention this automation in the article.`;
       const response = await fetch(`${base.origin}/api/ai/command`, {
@@ -75,6 +86,11 @@ export async function GET(request: Request) {
       topic: selected[index]?.topic,
       error: r.reason?.message || "Unknown error"
     }));
+
+    const failedIds = failed.map((x:any) => x.trendId).filter(Boolean);
+    if (failedIds.length) {
+      await db.from("trend_queue").update({ status: "queued" }).in("id", failedIds);
+    }
 
     return NextResponse.json({
       ok: failed.length === 0,

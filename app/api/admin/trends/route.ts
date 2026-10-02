@@ -216,12 +216,19 @@ async function scanTrends(db: any, bypassDailyLimit = false) {
 
   if (!rows.length) throw new Error("The trend scanner could not build any queue items.");
 
+  // Preserve already-published queue entries. A daily rescan must never turn a
+  // published trend back into `queued`, otherwise the next cron run could publish
+  // the same story again.
+  const rowSlugs = rows.map((r:any) => r.slug);
+  const { data: existingQueueRows } = await db.from("trend_queue").select("id,slug,status").in("slug", rowSlugs);
+  const publishedSlugs = new Set((existingQueueRows || []).filter((r:any) => r.status === "published").map((r:any) => r.slug));
+  const safeRows = rows.filter((r:any) => !publishedSlugs.has(r.slug)).map((r:any) => ({ ...r, status: "queued" }));
+  if (!safeRows.length) return { count: 0, signals: unique.length, model: modelUsed, message: "Fresh signals found, but all matching trends were already published." };
+
   // Write the queue in one operation and NEVER hide a Supabase error.
-  // The previous version ignored upsert errors, so the UI could say
-  // "10 trends found" even when zero rows were actually saved.
   const { data: insertedRows, error: queueError } = await db
     .from("trend_queue")
-    .upsert(rows, { onConflict: "slug" })
+    .upsert(safeRows, { onConflict: "slug" })
     .select("id,topic,slug,category,why_now,trend_score,source_urls,status,created_at,scanned_at");
 
   if (queueError) {
@@ -243,46 +250,35 @@ async function scanTrends(db: any, bypassDailyLimit = false) {
   return { count: insertedRows.length, signals: unique.length, model: modelUsed };
 }
 
+function cronAuthorized(request: Request) {
+  const secret = process.env.CRON_SECRET || "";
+  return !!secret && (request.headers.get("authorization") === `Bearer ${secret}` || request.headers.get("x-cron-secret") === secret);
+}
+
 export async function GET(request: Request) {
   try {
-    // Admin UI reads/scans use the signed-in user's Supabase session.
-    // Do not switch this path to the service-role client: that makes a missing
-    // server-only key break the Scanned Trends screen even though manual admin
-    // scanning can work safely through RLS.
-    const cronSecret = process.env.CRON_SECRET || "";
-    const cronAuthorized = Boolean(cronSecret) && (
-      request.headers.get("x-cron-secret") === cronSecret ||
-      request.headers.get("authorization") === `Bearer ${cronSecret}`
-    );
-    const db = cronAuthorized ? serviceClient() : (await requireAdmin(request)).client;
-    const result = await scanTrends(db, cronAuthorized);
+    const isCron = cronAuthorized(request);
+    const db = isCron ? serviceClient() : (await requireAdmin(request)).client;
+    const result = await scanTrends(db, isCron);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json(
       { error: e.message || "Trend scan failed." },
-      { status: e.status || 500 }
+      { status: e.status || (e.message?.includes("Admin") || e.message?.includes("Authentication") ? 403 : 500) }
     );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const cronSecret = process.env.CRON_SECRET || "";
-    const cronAuthorized = Boolean(cronSecret) && (
-      request.headers.get("x-cron-secret") === cronSecret ||
-      request.headers.get("authorization") === `Bearer ${cronSecret}`
-    );
-    const db = cronAuthorized ? serviceClient() : (await requireAdmin(request)).client;
-    const result = await scanTrends(db, cronAuthorized);
+    const isCron = cronAuthorized(request);
+    const db = isCron ? serviceClient() : (await requireAdmin(request)).client;
+    const result = await scanTrends(db, isCron);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json(
       { error: e.message || "Trend scan failed." },
-      {
-        status:
-          e.status ||
-          (e.message?.includes("Admin") || e.message?.includes("Authentication") ? 403 : 500),
-      }
+      { status: e.status || (e.message?.includes("Admin") || e.message?.includes("Authentication") ? 403 : 500) }
     );
   }
 }

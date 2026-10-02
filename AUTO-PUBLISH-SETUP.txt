@@ -6,8 +6,8 @@ What this update does
 3. Adds a Vercel Cron job that runs once every day at 03:30 UTC (09:00 IST).
 4. The daily job refreshes the trend queue and automatically publishes up to 5 articles per day.
 5. It uses the existing Openverse licensed-image pipeline. The first successfully sourced image becomes the cover image and up to 3 images are embedded in the article with attribution.
-6. Failed articles stay queued so they can be retried later; the system does not mark them published when generation fails.
-7. Existing manual Draft / Publish / Edit workflows remain available.
+6. Failed articles stay queued so they can be retried later; each article is isolated, so one failure never stops the other four. Queue rows are temporarily claimed as processing to prevent overlapping runs.
+7. Daily rescans preserve published trend rows and prevent the same trend slug from being queued again.
 
 Required Vercel environment variables
 - GEMINI_API_KEY (optional if another provider is configured)
