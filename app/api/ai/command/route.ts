@@ -41,7 +41,6 @@ async function findOpenverseImages(queries: string[], maxImages = 3) {
       const url = new URL('https://api.openverse.org/v1/images/');
       url.searchParams.set('q', query);
       url.searchParams.set('page_size', '5');
-      url.searchParams.set('license', 'cc0,by,by-sa,pdm');
       const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'IGTrendy/1.0' }, cache: 'no-store' });
       if (!response.ok) continue;
       const data = await response.json().catch(() => null);
@@ -59,7 +58,7 @@ async function storeOpenverseImage(db: any, image: any, slug: string, index: num
     const response = await fetch(image.url, { headers: { 'User-Agent': 'IGTrendy/1.0' }, cache: 'no-store' });
     if (!response.ok) return null;
     const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
-    if (!contentType.startsWith('image/')) return null;
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(contentType)) return null;
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (contentLength > 8 * 1024 * 1024) return null;
     const bytes = await response.arrayBuffer();
