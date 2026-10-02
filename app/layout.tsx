@@ -14,9 +14,12 @@ export const metadata: Metadata = {
   openGraph: { type: "website", siteName: "IGTrendy", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
   twitter: { card: "summary_large_image", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
   icons: {
-    icon: "/igtrendy-mark.svg",
-    shortcut: "/igtrendy-mark.svg",
-    apple: "/igtrendy-mark.svg",
+    icon: [
+      { url: "/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+      { url: "/igtrendy-mark.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon-48x48.png",
+    apple: "/favicon-48x48.png",
   },
   themeColor: "#070b14",
 };
