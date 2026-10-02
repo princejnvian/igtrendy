@@ -29,6 +29,51 @@ function getInteractionText(data: any) {
   return chunks.join('\n').trim();
 }
 
+
+async function generateWithOpenRouter(key: string, prompt: string) {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + key,
+      'HTTP-Referer': 'https://igtrendy.in',
+      'X-Title': 'IGTrendy AI Editorial Engine'
+    },
+    body: JSON.stringify({
+      model: 'openrouter/free',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are IGTrendy\'s senior editorial engine. Return only valid JSON matching the supplied schema.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'igtrendy_article',
+          strict: true,
+          schema: ARTICLE_SCHEMA
+        }
+      },
+      temperature: 0.7
+    })
+  });
+
+  const raw = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
+    throw new Error(`OpenRouter: ${detail}`);
+  }
+
+  const content = raw?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('OpenRouter returned an empty response.');
+  }
+
+  return parseStructuredArticle(content);
+}
+
 function escapeHtml(value: unknown) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
@@ -182,67 +227,61 @@ Command to execute: ${command}`;
     ].filter((v,i,a)=>v && a.indexOf(v)===i);
 
     let article:any = null;
-    let lastError = 'Gemini article generation failed.';
+    let lastError = 'AI article generation failed.';
 
+    // Provider 1: Gemini with Google Search grounding.
     for (const model of fallbackModels) {
       if (article) break;
-      for (let retry=0; retry<2 && !article; retry++) {
-        try {
-          const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json','x-goog-api-key':key},
-            body: JSON.stringify({
-              model,
-              input: prompt,
-              tools: [{ type: 'google_search' }],
-              response_format: { type: 'text', mime_type: 'application/json', schema: ARTICLE_SCHEMA },
-              generation_config: { max_output_tokens: 12000, thinking_level: 'low' }
-            })
-          });
+      try {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','x-goog-api-key':key},
+          body: JSON.stringify({
+            model,
+            input: prompt,
+            tools: [{ type: 'google_search' }],
+            response_format: { type: 'text', mime_type: 'application/json', schema: ARTICLE_SCHEMA },
+            generation_config: { max_output_tokens: 12000, thinking_level: 'low' }
+          })
+        });
 
-          const raw = await response.json().catch(()=>null);
-          if (!response.ok) {
-            const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
-            lastError = `${model}: ${detail}`;
-            if (response.status === 429) {
-              // 429 means this model is currently rate/quota limited. Move to
-              // the next model instead of retrying the same exhausted quota.
-              // Google recommends backoff for transient 429s, but retries do
-              // not help when the model's daily quota is already exhausted.
-              break;
-            }
-            if ([408,500,502,503,504].includes(response.status) && retry < 1) {
-              await new Promise(r=>setTimeout(r,1000*(2**retry)));
-              continue;
-            }
-            break;
-          }
-
-          if (raw?.status && raw.status !== 'completed') {
-            lastError = `${model}: interaction status ${raw.status}.`;
-            break;
-          }
-
-          const outputText = getInteractionText(raw);
-          try {
-            article = parseStructuredArticle(outputText);
-          } catch (parseError:any) {
-            lastError = `${model}: ${parseError?.message || 'Malformed structured output.'}`;
-            break;
-          }
-        } catch (networkError:any) {
-          lastError = `${model}: ${networkError?.message || 'Network request failed.'}`;
-          if (retry < 1) {
-            await new Promise(r=>setTimeout(r,1500));
-            continue;
-          }
+        const raw = await response.json().catch(()=>null);
+        if (!response.ok) {
+          const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
+          lastError = `${model}: ${detail}`;
+          continue;
         }
+
+        if (raw?.status && raw.status !== 'completed') {
+          lastError = `${model}: interaction status ${raw.status}.`;
+          continue;
+        }
+
+        try {
+          article = parseStructuredArticle(getInteractionText(raw));
+        } catch (parseError:any) {
+          lastError = `${model}: ${parseError?.message || 'Malformed structured output.'}`;
+        }
+      } catch (networkError:any) {
+        lastError = `${model}: ${networkError?.message || 'Network request failed.'}`;
+      }
+    }
+
+    // Provider 2: OpenRouter's current free-model router. This deliberately
+    // uses a provider-specific request because Gemini's Google Search tool is
+    // not portable to OpenRouter models.
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (!article && openRouterKey) {
+      try {
+        article = await generateWithOpenRouter(openRouterKey, prompt);
+      } catch (openRouterError:any) {
+        lastError = openRouterError?.message || 'OpenRouter generation failed.';
       }
     }
 
     if (!article) {
       throw new Error(
-        `Gemini article generation failed after trying fallback models. ${lastError}`
+        `AI article generation failed after Gemini and OpenRouter fallbacks. ${lastError}`
       );
     }
     article.slug = slugify(article.slug || article.title);
