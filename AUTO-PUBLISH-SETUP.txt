@@ -1,0 +1,30 @@
+IGTrendy automatic publishing
+
+What this update does
+1. Adds Grok 4.7 as the third AI fallback after Gemini and OpenRouter.
+2. Grok uses live Web Search and structured JSON output.
+3. Adds a Vercel Cron job that runs once every day at 03:30 UTC (09:00 IST).
+4. The daily job refreshes the trend queue and automatically publishes up to 5 articles per day.
+5. It uses the existing Openverse licensed-image pipeline. The first successfully sourced image becomes the cover image and up to 3 images are embedded in the article with attribution.
+6. Failed articles stay queued so they can be retried later; the system does not mark them published when generation fails.
+7. Existing manual Draft / Publish / Edit workflows remain available.
+
+Required Vercel environment variables
+- GEMINI_API_KEY (optional if another provider is configured)
+- OPENROUTER_API_KEY (optional)
+- XAI_API_KEY (required for Grok fallback)
+- SUPABASE_SERVICE_ROLE_KEY
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY
+- CRON_SECRET (required for the scheduled endpoint)
+- DAILY_ARTICLE_LIMIT=5
+- DAILY_TREND_SCAN_LIMIT=2
+
+CRON_SECRET must be a long random secret. Vercel Cron sends it to the scheduled endpoint as Authorization: Bearer <CRON_SECRET>.
+
+Security note
+Do not commit .env.local or API keys. The .env.local included in this delivery contains placeholders only.
+Rotate any Gemini or Supabase service-role keys that were present in the uploaded source archive before using this project in production.
+
+Image policy
+The automatic image pipeline uses openly licensed Openverse results (CC0, CC BY, CC BY-SA, or public-domain metadata) and stores them in the public article-images bucket with source/license attribution. It does not scrape arbitrary copyrighted images.

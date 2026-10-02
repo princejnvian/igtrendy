@@ -113,6 +113,59 @@ async function generateWithOpenRouter(key: string, prompt: string, signal?: Abor
 }
 
 
+
+function getXaiOutputText(data: any) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  const chunks = (data?.output || [])
+    .filter((item: any) => item?.type === 'message')
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .filter((item: any) => item?.type === 'output_text' && typeof item?.text === 'string')
+    .map((item: any) => item.text);
+  return chunks.join('\n').trim();
+}
+
+async function generateWithGrok(key: string, prompt: string, signal?: AbortSignal) {
+  const response = await fetch('https://api.x.ai/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + key,
+    },
+    signal,
+    body: JSON.stringify({
+      model: 'grok-4.7',
+      input: [
+        {
+          role: 'system',
+          content: 'You are IGTrendy\'s senior editorial engine. Return ONLY valid JSON matching the supplied schema. Do not wrap JSON in markdown fences.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      tools: [{ type: 'web_search' }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'igtrendy_article',
+          schema: ARTICLE_SCHEMA,
+          strict: true
+        }
+      },
+      reasoning: { effort: 'low' }
+    })
+  });
+
+  const raw = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
+    throw new Error(`Grok 4.7: ${detail}`);
+  }
+  const text = getXaiOutputText(raw);
+  if (!text) {
+    throw new Error(`Grok 4.7 returned no usable output (status=${String(raw?.status || 'unknown')}).`);
+  }
+  return parseStructuredArticle(text);
+}
+
 function escapeHtml(value: unknown) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
@@ -215,13 +268,22 @@ const GEMINI_MODELS = [
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin(request);
+    const cronSecret = process.env.CRON_SECRET || "";
+    const cronAuthorized = Boolean(cronSecret) && (
+      request.headers.get("x-cron-secret") === cronSecret ||
+      request.headers.get("authorization") === `Bearer ${cronSecret}`
+    );
+    if (!cronAuthorized) await requireAdmin(request);
+
     const body = await request.json();
     const command = String(body.command || "").trim();
     const mode = body.mode === "draft" ? "draft" : "publish";
     if (!command) return NextResponse.json({ error: "Command is required." }, { status: 400 });
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return NextResponse.json({ error: "GEMINI_API_KEY is not configured." }, { status: 503 });
+
+    const key = process.env.GEMINI_API_KEY || "";
+    const openRouterKey = process.env.OPENROUTER_API_KEY || "";
+    const xaiKey = process.env.XAI_API_KEY || "";
+    if (!key && !openRouterKey && !xaiKey) return NextResponse.json({ error: "No AI provider is configured. Add GEMINI_API_KEY, OPENROUTER_API_KEY, or XAI_API_KEY." }, { status: 503 });
 
     const db = serviceClient();
     const today = new Date().toISOString().slice(0, 10);
@@ -269,9 +331,9 @@ Command to execute: ${command}`;
     let lastError = 'AI article generation failed.';
 
     // Provider 1: try one Gemini model with Google Search grounding.
-    // If the project quota is exhausted, hand off immediately to OpenRouter.
+    // If Gemini is unavailable or quota-exhausted, hand off immediately.
     const primaryGeminiModel = fallbackModels[0] || 'gemini-3.5-flash-lite';
-    try {
+    if (key) try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 45000);
       try {
@@ -311,7 +373,6 @@ Command to execute: ${command}`;
     }
 
     // Provider 2: OpenRouter free-model router.
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
     if (!article && openRouterKey) {
       try {
         const controller = new AbortController();
@@ -328,14 +389,37 @@ Command to execute: ${command}`;
       }
     }
 
+    // Provider 3: Grok 4.7 with live Web Search + structured JSON.
+    if (!article && xaiKey) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 90000);
+        try {
+          article = await generateWithGrok(xaiKey, prompt, controller.signal);
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (grokError:any) {
+        lastError = grokError?.name === 'AbortError'
+          ? 'Grok 4.7: request timed out after 90 seconds.'
+          : (grokError?.message || 'Grok generation failed.');
+      }
+    }
+
     if (!article) {
       throw new Error(
-        `AI article generation failed after Gemini and OpenRouter fallbacks. ${lastError}`
+        `AI article generation failed after Gemini, OpenRouter, and Grok fallbacks. ${lastError}`
       );
     }
     article.slug = slugify(article.slug || article.title);
 
-    const imageCandidates = await findOpenverseImages(Array.isArray(article.image_queries) ? article.image_queries : [article.title], 3);
+    const imageQueries = Array.isArray(article.image_queries) ? article.image_queries : [];
+    const fallbackImageQueries = [
+      ...imageQueries,
+      article.title,
+      `${article.title} ${article.category || ''}`.trim()
+    ].filter(Boolean);
+    const imageCandidates = await findOpenverseImages(fallbackImageQueries, 3);
     const storedResults = await Promise.all(
       imageCandidates.map((image, index) => storeOpenverseImage(db, image, article.slug, index))
     );
@@ -354,7 +438,7 @@ Command to execute: ${command}`;
     }
     await db.rpc("record_ai_usage", { p_kind: "article" });
     const warnings:string[] = [];
-    if (Array.isArray(article.image_queries) && storedImages.length < Math.min(3, article.image_queries.length)) warnings.push("Some requested images could not be sourced from the openly-licensed image library.");
+    if (storedImages.length < Math.min(3, Math.max(2, imageQueries.length || 2))) warnings.push("Some requested images could not be sourced from the openly-licensed image library.");
     if (Array.isArray(article.sources) && saved?.id) {
       const sourceRows = article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}));
       const sourceDelete = await db.from("article_sources").delete().eq("article_id", saved.id);

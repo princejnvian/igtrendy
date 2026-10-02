@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/server";
+import { requireAdmin, serviceClient } from "@/lib/server";
 
 export const maxDuration = 120;
 
@@ -142,7 +142,7 @@ function buildLocalTrends(signals: Signal[]) {
   return selected;
 }
 
-async function scanTrends(db: any) {
+async function scanTrends(db: any, bypassDailyLimit = false) {
 
   const today = new Date().toISOString().slice(0, 10);
   const { data: usage } = await db
@@ -152,7 +152,7 @@ async function scanTrends(db: any) {
     .maybeSingle();
 
   const maxScans = Number(process.env.DAILY_TREND_SCAN_LIMIT || 2);
-  if ((usage?.trend_scan_count || 0) >= maxScans) {
+  if (!bypassDailyLimit && (usage?.trend_scan_count || 0) >= maxScans) {
     throw new Error(`Daily trend scan limit reached (${maxScans}).`);
   }
 
@@ -249,8 +249,13 @@ export async function GET(request: Request) {
     // Do not switch this path to the service-role client: that makes a missing
     // server-only key break the Scanned Trends screen even though manual admin
     // scanning can work safely through RLS.
-    const { client: db } = await requireAdmin(request);
-    const result = await scanTrends(db);
+    const cronSecret = process.env.CRON_SECRET || "";
+    const cronAuthorized = Boolean(cronSecret) && (
+      request.headers.get("x-cron-secret") === cronSecret ||
+      request.headers.get("authorization") === `Bearer ${cronSecret}`
+    );
+    const db = cronAuthorized ? serviceClient() : (await requireAdmin(request)).client;
+    const result = await scanTrends(db, cronAuthorized);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json(
@@ -262,8 +267,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { client: db } = await requireAdmin(request);
-    const result = await scanTrends(db);
+    const cronSecret = process.env.CRON_SECRET || "";
+    const cronAuthorized = Boolean(cronSecret) && (
+      request.headers.get("x-cron-secret") === cronSecret ||
+      request.headers.get("authorization") === `Bearer ${cronSecret}`
+    );
+    const db = cronAuthorized ? serviceClient() : (await requireAdmin(request)).client;
+    const result = await scanTrends(db, cronAuthorized);
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     return NextResponse.json(

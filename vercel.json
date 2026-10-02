@@ -1,1 +1,8 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/trends",
+      "schedule": "30 3 * * *"
+    }
+  ]
+}
