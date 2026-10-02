@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, serviceClient, slugify } from "@/lib/server";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function parseStructuredArticle(raw: unknown) {
   const text = String(raw || '').trim();
@@ -30,7 +30,7 @@ function getInteractionText(data: any) {
 }
 
 
-async function generateWithOpenRouter(key: string, prompt: string) {
+async function generateWithOpenRouter(key: string, prompt: string, signal?: AbortSignal) {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -39,6 +39,7 @@ async function generateWithOpenRouter(key: string, prompt: string) {
       'HTTP-Referer': 'https://igtrendy.in',
       'X-Title': 'IGTrendy AI Editorial Engine'
     },
+    signal,
     body: JSON.stringify({
       model: 'openrouter/free',
       messages: [
@@ -229,15 +230,19 @@ Command to execute: ${command}`;
     let article:any = null;
     let lastError = 'AI article generation failed.';
 
-    // Provider 1: Gemini with Google Search grounding.
-    for (const model of fallbackModels) {
-      if (article) break;
+    // Provider 1: try one Gemini model with Google Search grounding.
+    // If the project quota is exhausted, hand off immediately to OpenRouter.
+    const primaryGeminiModel = fallbackModels[0] || 'gemini-3.5-flash-lite';
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
       try {
         const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
           method: 'POST',
           headers: {'Content-Type':'application/json','x-goog-api-key':key},
+          signal: controller.signal,
           body: JSON.stringify({
-            model,
+            model: primaryGeminiModel,
             input: prompt,
             tools: [{ type: 'google_search' }],
             response_format: { type: 'text', mime_type: 'application/json', schema: ARTICLE_SCHEMA },
@@ -248,34 +253,40 @@ Command to execute: ${command}`;
         const raw = await response.json().catch(()=>null);
         if (!response.ok) {
           const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
-          lastError = `${model}: ${detail}`;
-          continue;
+          lastError = `${primaryGeminiModel}: ${detail}`;
+        } else if (raw?.status && raw.status !== 'completed') {
+          lastError = `${primaryGeminiModel}: interaction status ${raw.status}.`;
+        } else {
+          try {
+            article = parseStructuredArticle(getInteractionText(raw));
+          } catch (parseError:any) {
+            lastError = `${primaryGeminiModel}: ${parseError?.message || 'Malformed structured output.'}`;
+          }
         }
-
-        if (raw?.status && raw.status !== 'completed') {
-          lastError = `${model}: interaction status ${raw.status}.`;
-          continue;
-        }
-
-        try {
-          article = parseStructuredArticle(getInteractionText(raw));
-        } catch (parseError:any) {
-          lastError = `${model}: ${parseError?.message || 'Malformed structured output.'}`;
-        }
-      } catch (networkError:any) {
-        lastError = `${model}: ${networkError?.message || 'Network request failed.'}`;
+      } finally {
+        clearTimeout(timer);
       }
+    } catch (networkError:any) {
+      lastError = networkError?.name === 'AbortError'
+        ? `${primaryGeminiModel}: request timed out after 45 seconds.`
+        : `${primaryGeminiModel}: ${networkError?.message || 'Network request failed.'}`;
     }
 
-    // Provider 2: OpenRouter's current free-model router. This deliberately
-    // uses a provider-specific request because Gemini's Google Search tool is
-    // not portable to OpenRouter models.
+    // Provider 2: OpenRouter free-model router.
     const openRouterKey = process.env.OPENROUTER_API_KEY;
     if (!article && openRouterKey) {
       try {
-        article = await generateWithOpenRouter(openRouterKey, prompt);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 90000);
+        try {
+          article = await generateWithOpenRouter(openRouterKey, prompt, controller.signal);
+        } finally {
+          clearTimeout(timer);
+        }
       } catch (openRouterError:any) {
-        lastError = openRouterError?.message || 'OpenRouter generation failed.';
+        lastError = openRouterError?.name === 'AbortError'
+          ? 'OpenRouter: request timed out after 90 seconds.'
+          : (openRouterError?.message || 'OpenRouter generation failed.');
       }
     }
 
@@ -287,11 +298,10 @@ Command to execute: ${command}`;
     article.slug = slugify(article.slug || article.title);
 
     const imageCandidates = await findOpenverseImages(Array.isArray(article.image_queries) ? article.image_queries : [article.title], 3);
-    const storedImages:any[] = [];
-    for (let i = 0; i < imageCandidates.length; i++) {
-      const stored = await storeOpenverseImage(db, imageCandidates[i], article.slug, i);
-      if (stored) storedImages.push(stored);
-    }
+    const storedResults = await Promise.all(
+      imageCandidates.map((image, index) => storeOpenverseImage(db, image, article.slug, index))
+    );
+    const storedImages:any[] = storedResults.filter(Boolean);
     article.content_html = injectArticleImages(article.content_html, storedImages);
     const imageUrl = storedImages[0]?.url || "";
 
