@@ -31,49 +31,87 @@ function getInteractionText(data: any) {
 
 
 async function generateWithOpenRouter(key: string, prompt: string, signal?: AbortSignal) {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + key,
-      'HTTP-Referer': 'https://igtrendy.in',
-      'X-Title': 'IGTrendy AI Editorial Engine'
-    },
-    signal,
-    body: JSON.stringify({
-      model: 'openrouter/free',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are IGTrendy\'s senior editorial engine. Return only valid JSON matching the supplied schema.'
+  const models = [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'openai/gpt-oss-120b:free'
+  ];
+  let lastError = 'OpenRouter returned no usable output.';
+
+  for (const model of models) {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + key,
+          'HTTP-Referer': 'https://igtrendy.in',
+          'X-Title': 'IGTrendy AI Editorial Engine'
         },
-        { role: 'user', content: prompt }
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'igtrendy_article',
-          strict: true,
-          schema: ARTICLE_SCHEMA
+        signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are IGTrendy\'s senior editorial engine. Return ONLY valid JSON matching the supplied schema. Do not wrap JSON in markdown fences.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'igtrendy_article',
+              strict: true,
+              schema: ARTICLE_SCHEMA
+            }
+          },
+          temperature: 0.7,
+          max_tokens: 12000,
+          provider: {
+            allow_fallbacks: true
+          }
+        })
+      });
+
+      const raw = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
+        lastError = `${model}: ${detail}`;
+        continue;
+      }
+
+      const message = raw?.choices?.[0]?.message;
+      const content = message?.content;
+
+      if (typeof content === 'string' && content.trim()) {
+        try {
+          return parseStructuredArticle(content);
+        } catch (parseError:any) {
+          lastError = `${model}: ${parseError?.message || 'Malformed JSON.'}`;
+          continue;
         }
-      },
-      temperature: 0.7
-    })
-  });
+      }
 
-  const raw = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = String(raw?.error?.message || raw?.error?.code || `HTTP ${response.status}`);
-    throw new Error(`OpenRouter: ${detail}`);
+      if (content && typeof content === 'object') {
+        try {
+          return parseStructuredArticle(JSON.stringify(content));
+        } catch (parseError:any) {
+          lastError = `${model}: structured response could not be parsed.`;
+          continue;
+        }
+      }
+
+      const finishReason = String(raw?.choices?.[0]?.finish_reason || 'unknown');
+      const refusal = String(message?.refusal || raw?.error?.message || '');
+      lastError = `${model}: empty response (finish_reason=${finishReason})${refusal ? ` — ${refusal}` : ''}`;
+    } catch (error:any) {
+      lastError = `${model}: ${error?.name === 'AbortError' ? 'request timed out.' : (error?.message || 'request failed.')}`;
+    }
   }
 
-  const content = raw?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('OpenRouter returned an empty response.');
-  }
-
-  return parseStructuredArticle(content);
+  throw new Error(lastError);
 }
+
 
 function escapeHtml(value: unknown) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
