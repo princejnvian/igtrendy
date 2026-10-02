@@ -55,7 +55,7 @@ export default function AdminPage(){
   if(auth==="forbidden")return <main className="admin-modern"><div className="admin-loading"><h1>Admin access required</h1><p>Your account is not marked as an admin.</p></div></main>;
 
   return <main className="admin-modern">
-    <header className="admin-top"><Link href="/" className="logo">✦ IG<span>TRENDY</span></Link><div><span>👑 {auth.replace("admin:","").replace(/:$/,"" )}</span><Link href="/">View site</Link></div></header>
+    <header className="admin-top"><Link href="/" className="logo logo-image-link" aria-label="IGTrendy home"><img src="/igtrendy-logo.svg" alt="IGTrendy" className="admin-logo-image" /></Link><div><span>👑 {auth.replace("admin:","").replace(/:$/,"" )}</span><Link href="/">View site</Link></div></header>
     <div className="admin-grid">
       <aside className="admin-side"><div className="eyebrow">STUDIO</div><h2>Control room</h2><nav><a className="active" href="#command-center">🤖 AI Command Center</a><a href="#articles">📝 Articles</a><a href="#drafts">🗒️ Drafts</a><a href="#stories">📱 Web Stories</a><a href="#scanned-trends">🔥 Scanned Trends</a><a href="#analytics">📊 Analytics</a></nav><div className="safety-box"><b>AI workflow</b><p>AI writes article and story text. Images stay manual so you control every visual.</p></div></aside>
       <section className="admin-main">
