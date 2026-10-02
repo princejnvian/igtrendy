@@ -64,8 +64,8 @@ export default function SiteHeader() {
 
   return (
     <header className="site-header">
-      <Link href="/" className="logo">
-        <span>✦</span> IG<span>TRENDY</span>
+      <Link href="/" className="logo logo-image-link" aria-label="IGTrendy home">
+        <img src="/igtrendy-logo.svg" alt="IGTrendy" className="site-logo-image" />
       </Link>
 
       <nav>
