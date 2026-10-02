@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" role="img" aria-labelledby="title desc">
+  <title id="title">IGTrendy</title>
+  <desc id="desc">A cinematic glowing eye with a lightning flash and the IGTrendy wordmark.</desc>
+  <defs>
+    <linearGradient id="eye" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset=".52" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+    <radialGradient id="iris" cx=".5" cy=".5" r=".6">
+      <stop offset="0" stop-color="#eefcff"/>
+      <stop offset=".28" stop-color="#67e8f9"/>
+      <stop offset=".68" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset=".42" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g transform="translate(4 8)" filter="url(#glow)">
+    <path d="M3 32C18 10 38 4 58 4s40 6 55 28c-15 22-35 28-55 28S18 54 3 32Z" fill="#07111d" stroke="url(#eye)" stroke-width="4"/>
+    <ellipse cx="58" cy="32" rx="21" ry="22" fill="url(#iris)" stroke="#bff7ff" stroke-width="1.5"/>
+    <circle cx="58" cy="32" r="9" fill="#020711"/>
+    <circle cx="54" cy="27" r="3" fill="#fff" opacity=".9"/>
+    <path d="M18 12C34 2 48 0 62 3M18 52C34 62 48 64 62 61" fill="none" stroke="#22d3ee" stroke-width="1.5" opacity=".8"/>
+    <path d="M54 30l15-24-4 17 18-3-21 24 4-16-18 2Z" fill="#e8fbff" stroke="url(#eye)" stroke-width="2"/>
+  </g>
+  <text x="132" y="50" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="900" letter-spacing="-2">
+    <tspan fill="#f8fafc">IG</tspan><tspan fill="url(#word)">Trendy</tspan>
+  </text>
+</svg>
