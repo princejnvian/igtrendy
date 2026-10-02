@@ -29,6 +29,62 @@ function getInteractionText(data: any) {
   return chunks.join('\n').trim();
 }
 
+function escapeHtml(value: unknown) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+async function findOpenverseImages(queries: string[], maxImages = 3) {
+  const results: any[] = [];
+  const uniqueQueries = [...new Set(queries.map((q) => String(q || '').trim()).filter(Boolean))].slice(0, 5);
+  for (const query of uniqueQueries) {
+    try {
+      const url = new URL('https://api.openverse.org/v1/images/');
+      url.searchParams.set('q', query);
+      url.searchParams.set('page_size', '5');
+      url.searchParams.set('license', 'cc0,by,by-sa,pdm');
+      const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'IGTrendy/1.0' }, cache: 'no-store' });
+      if (!response.ok) continue;
+      const data = await response.json().catch(() => null);
+      const candidate = (data?.results || []).find((item: any) => item?.url && item?.license && ['cc0','by','by-sa','pdm'].includes(String(item.license).toLowerCase()) && !item?.mature);
+      if (candidate) results.push({ ...candidate, query });
+      if (results.length >= maxImages) break;
+    } catch {}
+  }
+  return results.slice(0, maxImages);
+}
+
+async function storeOpenverseImage(db: any, image: any, slug: string, index: number) {
+  if (!image?.url) return null;
+  try {
+    const response = await fetch(image.url, { headers: { 'User-Agent': 'IGTrendy/1.0' }, cache: 'no-store' });
+    if (!response.ok) return null;
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+    if (!contentType.startsWith('image/')) return null;
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > 8 * 1024 * 1024) return null;
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > 8 * 1024 * 1024) return null;
+    const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : contentType === 'image/gif' ? 'gif' : 'jpg';
+    const path = 'articles/' + slug + '/openverse-' + (index + 1) + '.' + extension;
+    const upload = await db.storage.from('article-images').upload(path, bytes, { contentType, upsert: true });
+    if (upload.error) return null;
+    const publicUrl = db.storage.from('article-images').getPublicUrl(path)?.data?.publicUrl || '';
+    if (!publicUrl) return null;
+    return { url: publicUrl, sourceUrl: image.foreign_landing_url || image.url, title: image.title || 'Image', creator: image.creator || 'Unknown creator', license: image.license || '', licenseVersion: image.license_version || '', licenseUrl: image.license_url || '', query: image.query || '' };
+  } catch { return null; }
+}
+
+function injectArticleImages(html: string, images: any[]) {
+  let output = String(html || '');
+  images.forEach((image, index) => {
+    const figure = '<figure class="article-media"><a href="' + escapeHtml(image.sourceUrl) + '" target="_blank" rel="noopener noreferrer nofollow"><img src="' + escapeHtml(image.url) + '" alt="' + escapeHtml(image.title) + '" loading="lazy" /></a><figcaption>' + escapeHtml(image.title) + ' — ' + escapeHtml(image.creator) + '. Licensed ' + escapeHtml(image.license.toUpperCase()) + (image.licenseVersion ? ' ' + escapeHtml(image.licenseVersion) : '') + '. <a href="' + escapeHtml(image.sourceUrl) + '" target="_blank" rel="noopener noreferrer nofollow">Image source</a>.</figcaption></figure>';
+    const token = new RegExp('<!--\\s*IMAGE_' + (index + 1) + '\\s*-->', 'i');
+    output = token.test(output) ? output.replace(token, figure) : output;
+  });
+  output = output.replace(/<!--\s*IMAGE_\d+\s*-->/gi, '');
+  return output;
+}
+
 const ARTICLE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -48,6 +104,7 @@ const ARTICLE_SCHEMA = {
         required: ['title','url']
       }
     },
+    image_queries: { type: 'array', items: { type: 'string' } },
     story_slides: {
       type: 'array',
       items: {
@@ -58,7 +115,7 @@ const ARTICLE_SCHEMA = {
       }
     }
   },
-  required: ['title','slug','excerpt','category','tags','content_html','sources','story_slides']
+  required: ['title','slug','excerpt','category','tags','content_html','sources','image_queries','story_slides']
 };
 
 const GEMINI_MODELS = [
@@ -89,7 +146,29 @@ export async function POST(request: Request) {
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
-    const prompt = `You are the editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.\n\nUser command: ${command}\n\nResearch using the supplied source URLs as leads and your current knowledge. Prefer official sources and reputable reporting. Do not invent facts. Return ONLY valid JSON with keys: title, slug, excerpt, category, tags (array), content_html, sources (array of {title,url}), story_slides (array of {headline,body}).\n\nARTICLE LENGTH: Write a substantial article of roughly 1400-2200 words when the topic supports it. Do not pad with repetition. Build a clear narrative with a strong opening, useful context, multiple h2/h3 sections, specific dates/names/details where verified, what is confirmed vs unconfirmed, and a concise conclusion. Include practical context or a timeline when useful.\n\nCONTENT: The article must be original, useful, factual, and not copied. Use category exactly one of: Gaming, Movies, Web Series, Events, Theories, Explained, Trending. Write clean semantic HTML inside content_html using h2, h3, p, ul, li, blockquote only. Mention uncertainty where facts are unconfirmed. Avoid defamatory or unsupported claims. Do not generate or depend on images; images will be added manually by the editor later.\n\nWEB STORY: Also create 6-10 concise story slides from the article. Each slide must have a punchy headline and useful body text. Do not include image fields; the editor will add images manually later.\n\nExisting articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.\n\nSource leads included in the command (verify before relying on them): ${command}`;
+    const prompt = `You are the senior editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.
+
+User command: ${command}
+
+RESEARCH: Use Google Search grounding for current facts, dates, announcements, trailers, release information, cast/creator details and other claims that may have changed. Prefer primary/official sources first, then reputable journalism. Never invent a fact or URL. Distinguish confirmed information from reports, rumours and speculation.
+
+EDITORIAL STYLE: Write like a polished professional entertainment publication. Use a sharp headline and dek, a compelling factual opening, useful context, clear H2/H3 hierarchy, concise paragraphs, specific dates and names, lists/tables where useful, natural transitions and a useful closing. Make it feel like a real editorial article, not generic AI prose. Do not copy wording or distinctive phrasing from any reference publication.
+
+LINKING: In content_html, naturally link the first meaningful mention of important games, films, shows, studios, platforms, trailers or official announcements when a verified source URL is available. Use real URLs from your grounded research/sources only; never invent URLs. Use normal HTML anchors with target="_blank" rel="noopener noreferrer nofollow". Do not turn every word into a link. Aim for 3-8 useful inline links when appropriate.
+
+IMAGES: Insert exactly 2-3 placeholder comments at natural points: <!-- IMAGE_1 -->, <!-- IMAGE_2 -->, <!-- IMAGE_3 -->. Do not put them inside another HTML tag. Also return image_queries: 2-3 concise searches for visually relevant, openly-licensed images. Prefer useful concepts rather than copyrighted posters or screenshots. The server will search an openly-licensed image library and add attribution automatically.
+
+ARTICLE: Write roughly 1600-2400 words when the topic supports it. Avoid padding and repetition. Use semantic HTML: h2, h3, p, ul, ol, li, blockquote, strong, em, table, thead, tbody, tr, th, td, a. Do not include h1 because the site renders the article title separately. Release-date/list articles should be easy to scan; news/explainers/theories should have a coherent narrative.
+
+SOURCES: Return 5-12 high-quality sources with title and URL. Prefer official studio/developer/network/platform pages for primary facts and reputable publications for reporting/context.
+
+WEB STORY: Create 6-10 concise slides from the article, each with a punchy headline and useful body text.
+
+Return ONLY valid JSON with keys: title, slug, excerpt, category, tags, content_html, sources, image_queries, story_slides.
+
+Existing articles that may be updated: ${JSON.stringify(recentArticles || [])}. If the command asks to update an existing article, return the revised complete article using the same slug when possible.
+
+Command to execute: ${command}`;
 
     const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
     const fallbackModels = [configuredModel, ...GEMINI_MODELS].filter((v,i,a)=>v && a.indexOf(v)===i);
@@ -107,6 +186,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
               model,
               input: prompt,
+              tools: [{ type: 'google_search' }],
               response_format: { type: 'text', mime_type: 'application/json', schema: ARTICLE_SCHEMA },
               generation_config: { max_output_tokens: 12000, thinking_level: 'low' }
             })
@@ -154,11 +234,18 @@ export async function POST(request: Request) {
     if (!article) throw new Error(`Gemini article generation failed. ${lastError}`);
     article.slug = slugify(article.slug || article.title);
 
-    const imageUrl = "";
+    const imageCandidates = await findOpenverseImages(Array.isArray(article.image_queries) ? article.image_queries : [article.title], 3);
+    const storedImages:any[] = [];
+    for (let i = 0; i < imageCandidates.length; i++) {
+      const stored = await storeOpenverseImage(db, imageCandidates[i], article.slug, i);
+      if (stored) storedImages.push(stored);
+    }
+    article.content_html = injectArticleImages(article.content_html, storedImages);
+    const imageUrl = storedImages[0]?.url || "";
 
     const status = mode === "publish" ? "published" : "draft";
     const { data: existing } = await db.from("articles").select("id,cover_image_url").eq("slug", article.slug).maybeSingle();
-    const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: existing?.cover_image_url || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };
+    const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: existing?.cover_image_url || imageUrl || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };
     const query = existing ? db.from("articles").update(payload).eq("id", existing.id) : db.from("articles").insert(payload);
     const { data: saved, error } = await query.select("id,title,slug,status,cover_image_url").single();
     if (error) {
@@ -167,6 +254,7 @@ export async function POST(request: Request) {
     }
     await db.rpc("record_ai_usage", { p_kind: "article" });
     const warnings:string[] = [];
+    if (Array.isArray(article.image_queries) && storedImages.length < Math.min(3, article.image_queries.length)) warnings.push("Some requested images could not be sourced from the openly-licensed image library.");
     if (Array.isArray(article.sources) && saved?.id) {
       const sourceRows = article.sources.filter((s:any)=>s?.url).slice(0,12).map((s:any)=>({article_id:saved.id,title:s.title||s.url,url:s.url}));
       const sourceDelete = await db.from("article_sources").delete().eq("article_id", saved.id);
