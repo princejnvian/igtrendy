@@ -151,3 +151,12 @@
 @media(max-width:1050px){.article-table-head{display:none}.article-row-admin{grid-template-columns:1fr auto;gap:9px}.article-row-admin>div:nth-child(2),.article-row-admin>div:nth-child(3),.article-row-admin>div:nth-child(4){display:none}.article-row-admin .admin-row-actions{grid-column:1/-1}.overview-grid{grid-template-columns:repeat(2,1fr)}.compact-draft-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.editor-modal-backdrop{padding:8px}.editor-modal{max-height:96vh;border-radius:16px;padding:18px}.editor-modal .editor-actions{margin:18px -18px -18px;padding:12px 18px;display:grid;grid-template-columns:1fr}.editor-modal .editor-actions select{width:100%}.overview-grid{grid-template-columns:1fr 1fr}.overview-card strong{font-size:24px}.article-toolbar{display:block}.article-filter-summary{margin-top:8px}.compact-draft-grid{grid-template-columns:1fr}.story-admin-card{align-items:flex-start;flex-direction:column}.article-cell-main b{max-width:calc(100vw - 140px)}}
 @media(max-width:480px){.overview-grid{grid-template-columns:1fr}.article-row-admin{padding:11px}.article-thumb{display:none}.article-cell-main b{max-width:calc(100vw - 80px)}.article-search kbd{display:none}.editor-head{display:block}.editor-head .admin-row-actions{margin-top:12px}}
+
+
+/* IGTrendy cinematic brand logo */
+.logo-image-link,.brand-image-link{display:inline-flex;align-items:center;flex-shrink:0;text-decoration:none}
+.site-logo-image{display:block;width:156px;height:auto;max-height:42px}
+.admin-logo-image{display:block;width:156px;height:auto;max-height:42px}
+.auth-logo-image{display:block;width:190px;height:auto;max-height:50px}
+.logo-image-link:hover,.brand-image-link:hover{opacity:.92}
+@media(max-width:640px){.site-logo-image{width:138px}.auth-logo-image{width:175px}.admin-logo-image{width:140px}}
