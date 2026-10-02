@@ -118,7 +118,7 @@ export default function Login() {
   if (checkingSession) {
     return (
       <main className="simple-page">
-        <Link href="/" className="brand"><span className="brand-mark">✦</span> IG<span>TRENDY</span></Link>
+        <Link href="/" className="brand brand-image-link" aria-label="IGTrendy home"><img src="/igtrendy-logo.svg" alt="IGTrendy" className="auth-logo-image" /></Link>
         <div className="auth-card"><div className="eyebrow"><span /> ACCOUNT</div><h1>Checking your session…</h1><p>One moment.</p></div>
       </main>
     );
@@ -130,7 +130,7 @@ export default function Login() {
 
     return (
       <main className="simple-page">
-        <Link href="/" className="brand"><span className="brand-mark">✦</span> IG<span>TRENDY</span></Link>
+        <Link href="/" className="brand brand-image-link" aria-label="IGTrendy home"><img src="/igtrendy-logo.svg" alt="IGTrendy" className="auth-logo-image" /></Link>
         <div className="auth-card signed-in-card">
           <div className="signed-in-avatar">{initial}</div>
           <div className="eyebrow"><span /> YOU ARE SIGNED IN</div>
@@ -147,8 +147,8 @@ export default function Login() {
 
   return (
     <main className="simple-page">
-      <Link href="/" className="brand">
-        <span className="brand-mark">✦</span> IG<span>TRENDY</span>
+      <Link href="/" className="brand brand-image-link" aria-label="IGTrendy home">
+        <img src="/igtrendy-logo.svg" alt="IGTrendy" className="auth-logo-image" />
       </Link>
 
       <div className="auth-card">
