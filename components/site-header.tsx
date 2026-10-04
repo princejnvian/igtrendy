@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 
 const sections = [
   ["🔥", "Trending", "/trending"],
+  ["📰", "News", "/category/news"],
   ["🎮", "Gaming", "/category/gaming"],
   ["🎬", "Movies", "/category/movies"],
   ["📺", "Web Series", "/category/web-series"],

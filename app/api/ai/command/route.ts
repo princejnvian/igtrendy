@@ -228,7 +228,7 @@ const ARTICLE_SCHEMA = {
     title: { type: 'string' },
     slug: { type: 'string' },
     excerpt: { type: 'string' },
-    category: { type: 'string', enum: ['Gaming','Movies','Web Series','Events','Theories','Explained','Trending'] },
+    category: { type: 'string', enum: ['Gaming','Movies','Web Series','Events','Theories','Explained','Trending','News'] },
     tags: { type: 'array', items: { type: 'string' } },
     content_html: { type: 'string' },
     sources: {
@@ -264,8 +264,7 @@ function validateGeneratedArticle(article: any) {
   if (bodyText.length < 1800) problems.push("Article body is too short.");
   if (validSources.length < 3) problems.push("Fewer than 3 valid source URLs.");
   if (!Array.isArray(article?.story_slides) || article.story_slides.length < 6) problems.push("Web Story has fewer than 6 slides.");
-  if (!Array.isArray(article?.image_queries) || article.image_queries.length < 2) problems.push("Fewer than 2 image queries.");
-  if (problems.length) throw new Error(`Article validation failed: ${problems.join(" ")}`);
+    if (problems.length) throw new Error(`Article validation failed: ${problems.join(" ")}`);
 }
 
 const GEMINI_MODELS = [
@@ -302,10 +301,10 @@ export async function POST(request: Request) {
     const db = serviceClient();
     const today = new Date().toISOString().slice(0, 10);
     const { data: usage } = await db.from("ai_usage_daily").select("article_count").eq("usage_date", today).maybeSingle();
-    const articleLimit = Number(process.env.DAILY_ARTICLE_LIMIT || 5);
+    const articleLimit = Number(process.env.DAILY_ARTICLE_LIMIT || 10);
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
-    const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(20);
+    const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(40);
     const prompt = `You are the senior editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.
 
 User command: ${command}
@@ -316,7 +315,7 @@ EDITORIAL STYLE: Write like a polished professional entertainment publication. U
 
 LINKING: In content_html, naturally link the first meaningful mention of important games, films, shows, studios, platforms, trailers or official announcements when a verified source URL is available. Use real URLs from your grounded research/sources only; never invent URLs. Use normal HTML anchors with target="_blank" rel="noopener noreferrer nofollow". Do not turn every word into a link. Aim for 3-8 useful inline links when appropriate.
 
-IMAGES: Insert exactly 2-3 placeholder comments at natural points: <!-- IMAGE_1 -->, <!-- IMAGE_2 -->, <!-- IMAGE_3 -->. Do not put them inside another HTML tag. Also return image_queries: 2-3 concise searches for visually relevant, openly-licensed images. Prefer useful concepts rather than copyrighted posters or screenshots. The server will search an openly-licensed image library and add attribution automatically.
+IMAGES: Images are optional. If useful, insert up to 3 placeholder comments at natural points: <!-- IMAGE_1 -->, <!-- IMAGE_2 -->, <!-- IMAGE_3 -->. Also return 0-3 concise image_queries for visually relevant, openly-licensed images. Never delay or block publication because an image is unavailable.
 
 ARTICLE: Write roughly 1600-2400 words when the topic supports it. Avoid padding and repetition. Use semantic HTML: h2, h3, p, ul, ol, li, blockquote, strong, em, table, thead, tbody, tr, th, td, a. Do not include h1 because the site renders the article title separately. Release-date/list articles should be easy to scan; news/explainers/theories should have a coherent narrative.
 
@@ -440,8 +439,7 @@ Command to execute: ${command}`;
     const storedImages:any[] = storedResults.filter(Boolean);
     article.content_html = injectArticleImages(article.content_html, storedImages);
     const imageUrl = storedImages[0]?.url || "";
-    if (mode === "publish" && !imageUrl) throw new Error("Article validation failed: no openly-licensed cover image could be sourced.");
-
+    
     const status = mode === "publish" ? "published" : "draft";
     const { data: existing } = await db.from("articles").select("id,cover_image_url").eq("slug", article.slug).maybeSingle();
     const payload = { title: article.title, slug: article.slug, excerpt: article.excerpt, content_html: article.content_html, cover_image_url: existing?.cover_image_url || imageUrl || null, category: article.category, tags: article.tags || [], status, updated_at: new Date().toISOString(), published_at: status === "published" ? new Date().toISOString() : null };

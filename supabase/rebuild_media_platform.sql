@@ -8,7 +8,7 @@ create table if not exists public.articles (
   excerpt text not null default '',
   content_html text not null,
   cover_image_url text,
-  category text not null check (category in ('Gaming','Movies','Web Series','Events','Theories','Explained','Trending')),
+  category text not null check (category in ('Gaming','Movies','Web Series','Events','Theories','Explained','Trending','News')),
   tags text[] not null default '{}',
   status text not null default 'draft' check (status in ('draft','published','archived')),
   views bigint not null default 0,
@@ -31,7 +31,7 @@ create table if not exists public.trend_queue (
   slug text unique not null,
   category text not null,
   why_now text not null default '',
-  status text not null default 'queued' check (status in ('queued','drafted','published','ignored')),
+  status text not null default 'queued' check (status in ('queued','drafted','processing','published','ignored')),
   created_at timestamptz not null default now()
 );
 
@@ -84,5 +84,5 @@ on conflict(id) do update set public=true,file_size_limit=15728640,allowed_mime_
 
 -- Useful public category seeds for the new site.
 insert into public.categories(name,slug,icon) values
-('Gaming','gaming','🎮'),('Movies','movies','🎬'),('Web Series','web-series','📺'),('Events','events','🏆'),('Theories','theories','🧠'),('Explained','explained','🔍')
+('Gaming','gaming','🎮'),('Movies','movies','🎬'),('Web Series','web-series','📺'),('Events','events','🏆'),('Theories','theories','🧠'),('Explained','explained','🔍'),('News','news','📰')
 on conflict(name) do update set slug=excluded.slug,icon=excluded.icon;

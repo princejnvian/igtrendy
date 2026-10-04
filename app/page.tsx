@@ -4,7 +4,7 @@ import SiteHeader from "@/components/site-header";
 import { getArticleCardImage } from "@/lib/article-media";
 
 const sections = [
-  ["🔥", "Trending", "/trending"], ["🎮", "Gaming", "/category/gaming"], ["🎬", "Movies", "/category/movies"],
+  ["🔥", "Trending", "/trending"], ["📰", "News", "/category/news"], ["🎮", "Gaming", "/category/gaming"], ["🎬", "Movies", "/category/movies"],
   ["📺", "Web Series", "/category/web-series"], ["🏆", "Events", "/category/events"], ["🧠", "Theories", "/category/theories"],
   ["🔍", "Explained", "/category/explained"], ["🎨", "AI Prompts", "/prompts"],
 ];
