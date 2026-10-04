@@ -84,7 +84,7 @@ async function scanTrends(db:any,bypassDailyLimit=false){
   const {data:existing}=await db.from("trend_queue").select("id,topic,slug,status,source_urls").limit(2000); const existingRows=existing||[];
   const publishedSources=new Set(existingRows.filter((r:any)=>r.status==="published").flatMap((r:any)=>Array.isArray(r.source_urls)?r.source_urls:[]));
   const existingTopics=existingRows.map((r:any)=>String(r.topic||""));
-  const safeRows=rows.filter((r:any)=>!publishedSources.has(r.source_urls?.[0])&&!existingTopics.some(t=>similarity(t,r.topic)>=0.78));
+  const safeRows=rows.filter((r:any)=>!publishedSources.has(r.source_urls?.[0])&&!existingTopics.some((t:string)=>similarity(t,r.topic)>=0.78));
   if(!safeRows.length)return{count:0,signals:unique.length,model:"google-news-rss-local-ranker",message:"Fresh signals were found, but they all matched existing topics."};
   const {data:inserted,error}=await db.from("trend_queue").insert(safeRows).select("id,topic,slug,category,why_now,trend_score,source_urls,status,created_at,scanned_at");
   if(error)throw new Error(`Trend queue save failed: ${error.message}`); if(!inserted?.length)throw new Error("Trend queue save returned no rows.");
