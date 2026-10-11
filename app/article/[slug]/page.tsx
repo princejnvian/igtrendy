@@ -5,6 +5,27 @@ import { supabase } from "@/lib/supabase";
 import SiteHeader from "@/components/site-header";
 import ArticleViewTracker from "./ArticleViewTracker";
 
+function categoryHref(value: string | null | undefined) {
+  const category = String(value || "News").toLowerCase();
+  if (category === "ipl") return "/category/ipl";
+  if (["cricket"].includes(category)) return "/category/cricket";
+  if (["football"].includes(category)) return "/category/football";
+  if (["tennis"].includes(category)) return "/category/tennis";
+  if (["sports"].includes(category)) return "/category/sports";
+  if (["stock market", "indian stocks", "global markets"].includes(category)) return "/category/stock-market";
+  if (category === "crypto") return "/category/crypto";
+  if (category === "bollywood") return "/category/bollywood";
+  if (category === "hollywood") return "/category/hollywood";
+  if (["gaming", "esports"].includes(category)) return "/category/gaming";
+  if (category === "web series") return "/category/web-series";
+  if (category === "movies") return "/category/movies";
+  if (category === "events") return "/category/events";
+  if (category === "explained") return "/category/explained";
+  if (category === "theories") return "/category/theories";
+  if (category === "trending") return "/category/trending";
+  return "/category/news";
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const { data } = await supabase
@@ -55,7 +76,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   const canonicalUrl = `https://igtrendy.in/article/${data.slug}`;
   const articleSchema = {
     "@context": "https://schema.org",
-    "@type": "NewsArticle",
+    "@type": "Article",
     headline: data.title,
     description: data.excerpt || data.title,
     mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
@@ -71,7 +92,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: "https://igtrendy.in" },
-      { "@type": "ListItem", position: 2, name: data.category || "Stories", item: `https://igtrendy.in/category/${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}` },
+      { "@type": "ListItem", position: 2, name: data.category || "Stories", item: `https://igtrendy.in${categoryHref(data.category)}` },
       { "@type": "ListItem", position: 3, name: data.title, item: canonicalUrl },
     ],
   };
@@ -83,7 +104,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema).replace(/</g, "\\u003c") }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema).replace(/</g, "\\u003c") }} />
       <article className="article-page">
-        <span className="article-category"><Link href={`/category/${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}>{data.category || "News"}</Link></span>
+        <span className="article-category"><Link href={categoryHref(data.category)}>{data.category || "News"}</Link></span>
         <h1>{data.title}</h1>
         <p className="article-excerpt">{data.excerpt}</p>
         <div className="article-meta">Published {new Date(publishedAt).toLocaleDateString("en-US")} · Updated {new Date(modifiedAt).toLocaleDateString("en-US")} · {data.views || 0} views</div>
