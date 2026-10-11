@@ -63,8 +63,6 @@ function similarity(a:string,b:string){
   return overlap>=3&&containment>=0.7&&(jaccard>=0.38||overlap>=5)?containment:0;
 }
 
-function shuffle<T>(items:T[]){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
-
 function buildLocalTrends(signals:Signal[]){
   const ranked=signals
     .map(signal=>({signal,score:signalScore(signal,signals)}))
@@ -73,7 +71,7 @@ function buildLocalTrends(signals:Signal[]){
 
   const candidates:any[]=[];
   for(const {signal,score} of ranked){
-    const title=signal.title.replace(/\\s+-\\s+[^-]+$/," ").trim()||signal.title;
+    const title=signal.title.replace(/\s+-\s+[^-]+$/," ").trim()||signal.title;
     if(candidates.some(item=>similarity(item.title,title)>=0.7))continue;
     const category=inferCategory(signal);
     const date=Date.parse(signal.pubDate);
