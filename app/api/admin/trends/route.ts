@@ -81,15 +81,52 @@ async function scanTrends(db:any,bypassDailyLimit=false){
   if(!unique.length)throw new Error("No fresh news signals were found in the last 48 hours.");
   const trends=buildLocalTrends(unique); if(!trends.length)throw new Error("No fresh, sufficiently distinct trends were found.");
   const rows=trends.map((t:any)=>{const topic=String(t.title).trim();const slug=topic.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g,"").trim().replace(/[\s_-]+/g,"-").slice(0,90);return{topic,slug,category:ALLOWED_CATEGORIES.includes(t.category)?t.category:"Trending",why_now:String(t.why_now||""),trend_score:Math.max(1,Math.min(100,Number(t.trend_score)||50)),source_urls:(t.source_urls||[]).filter((u:any)=>typeof u==="string"&&/^https?:\/\//i.test(u)).slice(0,8),status:"queued",scanned_at:new Date().toISOString()};});
-  const {data:existing}=await db.from("trend_queue").select("id,topic,slug,status,source_urls").limit(2000); const existingRows=existing||[];
+  const {data:existing,error:existingError}=await db.from("trend_queue").select("id,topic,slug,status,source_urls").limit(2000);
+  if(existingError)throw new Error(`Existing trend lookup failed: ${existingError.message}`);
+  const existingRows=existing||[];
   const publishedSources=new Set(existingRows.filter((r:any)=>r.status==="published").flatMap((r:any)=>Array.isArray(r.source_urls)?r.source_urls:[]));
-  const existingTopics=existingRows.map((r:any)=>String(r.topic||""));
-  const safeRows=rows.filter((r:any)=>!publishedSources.has(r.source_urls?.[0])&&!existingTopics.some((t:string)=>similarity(t,r.topic)>=0.78));
-  if(!safeRows.length)return{count:0,signals:unique.length,model:"google-news-rss-local-ranker",message:"Fresh signals were found, but they all matched existing topics."};
-  const {data:inserted,error}=await db.from("trend_queue").insert(safeRows).select("id,topic,slug,category,why_now,trend_score,source_urls,status,created_at,scanned_at");
-  if(error)throw new Error(`Trend queue save failed: ${error.message}`); if(!inserted?.length)throw new Error("Trend queue save returned no rows.");
-  const {error:usageError}=await db.rpc("record_ai_usage",{p_kind:"trend_scan"}); if(usageError)console.error("AI usage counter update failed:",usageError.message);
-  return{count:inserted.length,signals:unique.length,model:"google-news-rss-local-ranker",message:"Fresh regional signals queued."};
+  const safeRows:any[]=[];
+  const refreshedIds=new Set<string>();
+  let refreshed=0;
+
+  // If a fresh RSS result matches an old queued topic, refresh that queue row
+  // instead of discarding the signal and leaving the stale row stuck forever.
+  for(const row of rows){
+    const source=Array.isArray(row.source_urls)?row.source_urls[0]:null;
+    if(source&&publishedSources.has(source))continue;
+    const match=existingRows.find((item:any)=>similarity(String(item.topic||""),String(row.topic||""))>=0.78);
+    if(!match){
+      safeRows.push(row);
+      continue;
+    }
+    if(match.status==="queued"&&!refreshedIds.has(match.id)){
+      const {error:updateError}=await db.from("trend_queue").update({
+        topic:row.topic,
+        slug:row.slug,
+        category:row.category,
+        why_now:row.why_now,
+        trend_score:row.trend_score,
+        source_urls:row.source_urls,
+        status:"queued",
+        scanned_at:row.scanned_at
+      }).eq("id",match.id);
+      if(updateError)throw new Error(`Queued trend refresh failed: ${updateError.message}`);
+      refreshedIds.add(match.id);
+      refreshed++;
+    }
+  }
+
+  let inserted:any[]=[];
+  if(safeRows.length){
+    const {data,error}=await db.from("trend_queue").insert(safeRows).select("id,topic,slug,category,why_now,trend_score,source_urls,status,created_at,scanned_at");
+    if(error)throw new Error(`Trend queue save failed: ${error.message}`);
+    inserted=data||[];
+  }
+  if(!inserted.length&&!refreshed)return{count:0,inserted:0,refreshed:0,signals:unique.length,model:"google-news-rss-local-ranker",message:"Fresh signals were found, but they matched already-published or non-queued topics."};
+
+  const {error:usageError}=await db.rpc("record_ai_usage",{p_kind:"trend_scan"});
+  if(usageError)console.error("AI usage counter update failed:",usageError.message);
+  return{count:inserted.length+refreshed,inserted:inserted.length,refreshed,signals:unique.length,model:"google-news-rss-local-ranker",message:"Fresh regional signals queued or refreshed."};
 }
 
 function cronAuthorized(request:Request){const secret=process.env.CRON_SECRET||"";return!!secret&&(request.headers.get("authorization")===`Bearer ${secret}`||request.headers.get("x-cron-secret")===secret);}
