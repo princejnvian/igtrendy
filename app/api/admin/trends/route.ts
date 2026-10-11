@@ -43,19 +43,59 @@ function signalScore(signal:Signal, all:Signal[]){
   score+=Math.min(15,related*4); return Math.max(1,Math.min(100,score));
 }
 
-function similarity(a:string,b:string){const aw=new Set(a.toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(w=>w.length>=5));const bw=new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(w=>w.length>=5));let n=0;for(const w of aw)if(bw.has(w))n++;return n/Math.max(1,Math.min(aw.size,bw.size));}
+const TITLE_STOP_WORDS = new Set(["about","after","again","amid","among","and","are","around","before","being","best","between","breaking","but","could","does","down","during","from","have","here","how","into","just","latest","more","most","new","news","over","says","that","their","them","then","there","these","this","those","through","today","tomorrow","update","updates","using","what","when","where","which","while","with","will","your"]);
+
+function titleTokens(value:string){
+  return new Set(value.toLowerCase()
+    .replace(/&/g," and ")
+    .replace(/[^a-z0-9\\s]/g," ")
+    .split(/\\s+/)
+    .filter(word=>word.length>=3&&!TITLE_STOP_WORDS.has(word)));
+}
+
+function similarity(a:string,b:string){
+  const aa=titleTokens(a), bb=titleTokens(b);
+  if(!aa.size||!bb.size)return 0;
+  let overlap=0;
+  for(const word of aa)if(bb.has(word))overlap++;
+  const containment=overlap/Math.min(aa.size,bb.size);
+  const jaccard=overlap/Math.max(1,aa.size+bb.size-overlap);
+  return overlap>=3&&containment>=0.7&&(jaccard>=0.38||overlap>=5)?containment:0;
+}
 
 function shuffle<T>(items:T[]){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
 function buildLocalTrends(signals:Signal[]){
-  const ranked=signals.map(signal=>({signal,score:signalScore(signal,signals)})).filter(x=>Date.now()-Date.parse(x.signal.pubDate)<=48*36e5 || !Number.isFinite(Date.parse(x.signal.pubDate))).sort((a,b)=>b.score-a.score);
-  const pool=shuffle(ranked.slice(0,35)); const selected:any[]=[]; const categoryCounts=new Map<string,number>();
-  for(const {signal,score} of pool){const category=inferCategory(signal);if((categoryCounts.get(category)||0)>=2)continue;if(selected.some(x=>similarity(x.title,signal.title)>=0.65))continue;
-    const title=signal.title.replace(/\s+-\s+[^-]+$/," ").trim()||signal.title; const date=Date.parse(signal.pubDate); const fresh=Number.isFinite(date)?`Fresh signal from ${signal.region} Google News (${new Date(date).toUTCString()}).`:`Fresh signal from ${signal.region} Google News.`;
+  const ranked=signals
+    .map(signal=>({signal,score:signalScore(signal,signals)}))
+    .filter(x=>Date.now()-Date.parse(x.signal.pubDate)<=48*36e5 || !Number.isFinite(Date.parse(x.signal.pubDate)))
+    .sort((a,b)=>b.score-a.score);
+
+  const candidates:any[]=[];
+  for(const {signal,score} of ranked){
+    const title=signal.title.replace(/\\s+-\\s+[^-]+$/," ").trim()||signal.title;
+    if(candidates.some(item=>similarity(item.title,title)>=0.7))continue;
+    const category=inferCategory(signal);
+    const date=Date.parse(signal.pubDate);
+    const fresh=Number.isFinite(date)?`Fresh signal from ${signal.region} Google News (${new Date(date).toUTCString()}).`:`Fresh signal from ${signal.region} Google News.`;
     const snippet=signal.description?` ${signal.description.slice(0,420)}`:"";
-    selected.push({title,category,why_now:(fresh+snippet).slice(0,700),trend_score:score,source_urls:[signal.link]}); categoryCounts.set(category,(categoryCounts.get(category)||0)+1); if(selected.length>=10)break;
+    candidates.push({title,category,why_now:(fresh+snippet).slice(0,700),trend_score:score,source_urls:[signal.link]});
   }
-  return selected;
+
+  // Prioritize new entertainment/culture topics first, then fill remaining
+  // slots with fresh News topics instead of repeating already-used subjects.
+  const selected:any[]=[];
+  const categoryCounts=new Map<string,number>();
+  const addCandidate=(candidate:any,limit:number)=>{
+    if(selected.length>=10)return;
+    if((categoryCounts.get(candidate.category)||0)>=limit)return;
+    if(selected.some(item=>similarity(item.title,candidate.title)>=0.7))return;
+    selected.push(candidate);
+    categoryCounts.set(candidate.category,(categoryCounts.get(candidate.category)||0)+1);
+  };
+  for(const candidate of candidates.filter(item=>item.category!=="News"))addCandidate(candidate,3);
+  for(const candidate of candidates.filter(item=>item.category==="News"))addCandidate(candidate,10);
+  return selected.slice(0,10);
 }
 
 async function scanTrends(db:any,bypassDailyLimit=false){
@@ -84,22 +124,27 @@ async function scanTrends(db:any,bypassDailyLimit=false){
   const {data:existing,error:existingError}=await db.from("trend_queue").select("id,topic,slug,status,source_urls").limit(2000);
   if(existingError)throw new Error(`Existing trend lookup failed: ${existingError.message}`);
   const existingRows=existing||[];
+  const {data:publishedArticles,error:publishedArticlesError}=await db.from("articles").select("title").eq("status","published").limit(2000);
+  if(publishedArticlesError)throw new Error(`Published article lookup failed: ${publishedArticlesError.message}`);
+  const publishedTitles=(publishedArticles||[]).map((item:any)=>String(item.title||"")).filter(Boolean);
   const publishedSources=new Set(existingRows.filter((r:any)=>r.status==="published").flatMap((r:any)=>Array.isArray(r.source_urls)?r.source_urls:[]));
   const safeRows:any[]=[];
   const refreshedIds=new Set<string>();
   let refreshed=0;
 
-  // If a fresh RSS result matches an old queued topic, refresh that queue row
-  // instead of discarding the signal and leaving the stale row stuck forever.
   for(const row of rows){
     const source=Array.isArray(row.source_urls)?row.source_urls[0]:null;
     if(source&&publishedSources.has(source))continue;
-    const match=existingRows.find((item:any)=>similarity(String(item.topic||""),String(row.topic||""))>=0.78);
+    if(publishedTitles.some((title:string)=>similarity(title,row.topic)>=0.7))continue;
+    if(existingRows.some((item:any)=>item.status==="published"&&similarity(String(item.topic||""),row.topic)>=0.7))continue;
+    if(existingRows.some((item:any)=>item.status==="processing"&&similarity(String(item.topic||""),row.topic)>=0.7))continue;
+
+    const match=existingRows.find((item:any)=>item.status==="queued"&&similarity(String(item.topic||""),row.topic)>=0.7);
     if(!match){
       safeRows.push(row);
       continue;
     }
-    if(match.status==="queued"&&!refreshedIds.has(match.id)){
+    if(!refreshedIds.has(match.id)){
       const {error:updateError}=await db.from("trend_queue").update({
         topic:row.topic,
         slug:row.slug,
