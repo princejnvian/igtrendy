@@ -12,16 +12,21 @@ function authorized(request: Request) {
   );
 }
 
-function topicKey(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9\\s]/g, " ").split(/\\s+/).filter((word) => word.length >= 5).sort().join(" ");
+const TITLE_STOP_WORDS = new Set(["about","after","again","amid","among","and","are","around","before","being","best","between","breaking","but","could","does","down","during","from","have","here","how","into","just","latest","more","most","new","news","over","says","that","their","them","then","there","these","this","those","through","today","tomorrow","update","updates","using","what","when","where","which","while","with","will","your"]);
+
+function topicTokens(value: string) {
+  return new Set(value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length >= 3 && !TITLE_STOP_WORDS.has(word)));
 }
 
 function similar(a: string, b: string) {
-  const aa = new Set(topicKey(a).split(" "));
-  const bb = new Set(topicKey(b).split(" "));
+  const aa = topicTokens(a);
+  const bb = topicTokens(b);
+  if (!aa.size || !bb.size) return false;
   let overlap = 0;
   for (const word of aa) if (bb.has(word)) overlap++;
-  return overlap / Math.max(1, Math.min(aa.size, bb.size)) >= 0.72;
+  const containment = overlap / Math.min(aa.size, bb.size);
+  const jaccard = overlap / Math.max(1, aa.size + bb.size - overlap);
+  return overlap >= 3 && containment >= 0.7 && (jaccard >= 0.38 || overlap >= 5);
 }
 
 export async function GET(request: Request) {
@@ -98,11 +103,15 @@ export async function GET(request: Request) {
       ...(recentArticles || []).map((row: any) => row.title),
       ...(publishedTrends || []).map((row: any) => row.topic),
     ];
-    const selected = (trends || []).filter((trend: any) => {
+    const selected: any[] = [];
+    for (const trend of trends || []) {
       const sources = Array.isArray(trend.source_urls) ? trend.source_urls : [];
-      return !sources.some((url: string) => publishedSources.has(url)) &&
-        !usedTitles.some((title: string) => similar(title, trend.topic));
-    }).slice(0, remaining);
+      if (sources.some((url: string) => publishedSources.has(url))) continue;
+      if (usedTitles.some((title: string) => similar(title, trend.topic))) continue;
+      if (selected.some((item: any) => similar(item.topic, trend.topic))) continue;
+      selected.push(trend);
+      if (selected.length >= remaining) break;
+    }
 
     if (!selected.length) {
       return NextResponse.json({
