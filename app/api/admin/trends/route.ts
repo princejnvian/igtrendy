@@ -75,25 +75,25 @@ function buildLocalTrends(signals:Signal[]){
     if(candidates.some(item=>similarity(item.title,title)>=0.7))continue;
     const category=inferCategory(signal);
     const date=Date.parse(signal.pubDate);
-    const fresh=Number.isFinite(date)?`Fresh signal from ${signal.region} Google News (${new Date(date).toUTCString()}).`:`Fresh signal from ${signal.region} Google News.`;
-    const snippet=signal.description?` ${signal.description.slice(0,420)}`:"";
+    const fresh=Number.isFinite(date)?\`Fresh signal from \${signal.region} Google News (\${new Date(date).toUTCString()}).\`:\`Fresh signal from \${signal.region} Google News.\`;
+    const snippet=signal.description?\` \${signal.description.slice(0,420)}\`:"";
     candidates.push({title,category,why_now:(fresh+snippet).slice(0,700),trend_score:score,source_urls:[signal.link]});
   }
 
-  // Prioritize new entertainment/culture topics first, then fill remaining
-  // slots with fresh News topics instead of repeating already-used subjects.
+  // Keep a larger ranked candidate pool so database-level duplicate checks
+  // can reject old topics and still fall back to genuinely fresh News stories.
   const selected:any[]=[];
   const categoryCounts=new Map<string,number>();
   const addCandidate=(candidate:any,limit:number)=>{
-    if(selected.length>=10)return;
+    if(selected.length>=30)return;
     if((categoryCounts.get(candidate.category)||0)>=limit)return;
     if(selected.some(item=>similarity(item.title,candidate.title)>=0.7))return;
     selected.push(candidate);
     categoryCounts.set(candidate.category,(categoryCounts.get(candidate.category)||0)+1);
   };
   for(const candidate of candidates.filter(item=>item.category!=="News"))addCandidate(candidate,3);
-  for(const candidate of candidates.filter(item=>item.category==="News"))addCandidate(candidate,10);
-  return selected.slice(0,10);
+  for(const candidate of candidates.filter(item=>item.category==="News"))addCandidate(candidate,30);
+  return selected;
 }
 
 async function scanTrends(db:any,bypassDailyLimit=false){
@@ -157,6 +157,7 @@ async function scanTrends(db:any,bypassDailyLimit=false){
       refreshedIds.add(match.id);
       refreshed++;
     }
+    if(safeRows.length+refreshed>=10)break;
   }
 
   let inserted:any[]=[];
