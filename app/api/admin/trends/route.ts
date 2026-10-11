@@ -4,7 +4,7 @@ import { requireAdmin, serviceClient } from "@/lib/server";
 export const maxDuration = 120;
 
 type Signal = { title:string; link:string; pubDate:string; description:string; region:string };
-const ALLOWED_CATEGORIES = ["Gaming","Movies","Web Series","Events","Theories","Explained","Trending","News"];
+const ALLOWED_CATEGORIES = ["Gaming","Sports","Cricket","IPL","Football","Tennis","Esports","Stock Market","Indian Stocks","Global Markets","Crypto","Bollywood","Hollywood","Movies","Web Series","Events","Theories","Explained","Trending","News"];
 
 function decodeXml(value:string){return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">");}
 
@@ -23,13 +23,24 @@ async function fetchGoogleNews(query:string, region:string, gl:string, hl:string
 }
 
 function inferCategory(signal:Signal){
-  const text=`${signal.title} ${signal.description}`.toLowerCase();
-  if(["India","United States","Europe"].includes(signal.region)) return "News";
-  if(/\b(gta|playstation|xbox|nintendo|gaming|game|steam|switch|fortnite|minecraft|pokemon)\b/.test(text)) return "Gaming";
-  if(/\b(netflix|prime video|disney\+|hbo|web series|series|season|episode)\b/.test(text)) return "Web Series";
-  if(/\b(movie|film|hollywood|marvel|dc|trailer|casting|box office|actor|actress)\b/.test(text)) return "Movies";
+  const text=(signal.title+" "+signal.description).toLowerCase();
+  if(/\b(ipl|indian premier league|ipl auction|ipl mega auction)\b/.test(text)) return "IPL";
+  if(/\b(cricket|bcci|test match|odi|t20|wicket|run chase|world cup cricket|icc champions trophy)\b/.test(text)) return "Cricket";
+  if(/\b(football|soccer|premier league|champions league|la liga|bundesliga|serie a|fifa|uefa|transfer window|transfer news)\b/.test(text)) return "Football";
+  if(/\b(tennis|wimbledon|us open|french open|australian open|atp tour|wta tour)\b/.test(text)) return "Tennis";
+  if(/\b(esports|e-sports|valorant champions|league of legends|counter-strike|cs2 tournament|dota 2|esl pro league)\b/.test(text)) return "Esports";
+  if(/\b(stock market|share market|nifty|sensex|bse|nse|indian stocks|rupee|rbi policy|rbi rate|indian equities|midcap|smallcap)\b/.test(text) && signal.region==="India") return "Indian Stocks";
+  if(/\b(stock market|wall street|nasdaq|s&p 500|dow jones|federal reserve|fed rate|treasury yield|global markets|equities|stocks rally|stocks fall)\b/.test(text)) return "Global Markets";
+  if(/\b(bitcoin|btc|ethereum|ether|crypto|cryptocurrency|solana|xrp|binance|stablecoin|blockchain)\b/.test(text)) return "Crypto";
+  if(/\b(bollywood|hindi cinema|hindi film|shah rukh|salman khan|aamir khan|deepika padukone|ranbir kapoor|box office india|tollywood|indian cinema)\b/.test(text)) return "Bollywood";
+  if(/\b(hollywood|oscars|academy awards|warner bros|universal pictures|paramount pictures|sony pictures|marvel studios|dc studios)\b/.test(text)) return "Hollywood";
+  if(/\b(gta|playstation|xbox|nintendo|gaming|game|steam|switch|fortnite|minecraft|pokemon|esports)\b/.test(text)) return "Gaming";
+  if(/\b(netflix|prime video|disney\+|hbo|web series|series|season|episode|streaming)\b/.test(text)) return "Web Series";
+  if(/\b(movie|film|trailer|casting|box office|actor|actress|cinema)\b/.test(text)) return "Movies";
   if(/\b(award|festival|event|concert|premiere|ceremony)\b/.test(text)) return "Events";
   if(/\b(theory|mystery|explained|simulation|conspiracy|ai|artificial intelligence)\b/.test(text)) return "Theories";
+  if(/\b(sports|sport|olympics|athletics|formula 1|f1|nba|basketball|badminton|hockey|rugby|golf)\b/.test(text)) return "Sports";
+  if(["India","United States","Europe"].includes(signal.region)) return "News";
   return "Trending";
 }
 
@@ -108,6 +119,16 @@ async function scanTrends(db:any,bypassDailyLimit=false){
     [q("Europe latest news breaking politics business technology culture"),"Europe","GB","en-GB","GB:en"],
     [q("UK Germany France Europe latest news breaking"),"Europe","GB","en-GB","GB:en"],
     [q("gaming GTA Nintendo PlayStation Xbox game release update"),"Entertainment","US","en-US","US:en"],
+    [q("sports latest results fixtures transfer news football tennis basketball Formula 1"),"Entertainment","US","en-US","US:en"],
+    [q("cricket latest news ICC India team match result"),"India","IN","en-IN","IN:en"],
+    [q("IPL Indian Premier League latest team auction news"),"India","IN","en-IN","IN:en"],
+    [q("football soccer Premier League Champions League transfer news"),"Entertainment","GB","en-GB","GB:en"],
+    [q("Indian stock market Nifty Sensex NSE BSE company earnings"),"India","IN","en-IN","IN:en"],
+    [q("US stock market Wall Street Nasdaq S&P 500 earnings Fed"),"United States","US","en-US","US:en"],
+    [q("global markets stocks bonds commodities economy latest"),"Europe","GB","en-GB","GB:en"],
+    [q("Bitcoin Ethereum cryptocurrency crypto market regulation"),"United States","US","en-US","US:en"],
+    [q("Bollywood Hindi cinema movie release box office actor actress"),"India","IN","en-IN","IN:en"],
+    [q("Hollywood movie studio trailer casting box office Oscars"),"United States","US","en-US","US:en"],
     [q("movies Hollywood Netflix Marvel DC trailer release casting"),"Entertainment","US","en-US","US:en"],
     [q("web series Netflix Prime Video Disney HBO trailer release"),"Entertainment","US","en-US","US:en"],
     [q("viral entertainment events awards festival pop culture"),"Entertainment","US","en-US","US:en"],
