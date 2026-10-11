@@ -301,7 +301,7 @@ export async function POST(request: Request) {
     const db = serviceClient();
     const today = new Date().toISOString().slice(0, 10);
     const { data: usage } = await db.from("ai_usage_daily").select("article_count").eq("usage_date", today).maybeSingle();
-    const articleLimit = Number(process.env.DAILY_ARTICLE_LIMIT || 10);
+    const articleLimit = Math.min(5, Math.max(1, Number(process.env.DAILY_ARTICLE_LIMIT || 5)));
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(40);
