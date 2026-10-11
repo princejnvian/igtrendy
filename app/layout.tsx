@@ -8,10 +8,10 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   metadataBase: new URL("https://igtrendy.in"),
   title: { default: "IGTrendy — What's Trending Now", template: "%s | IGTrendy" },
-  description: "Trending games, movies, web series, events, theories, explained stories and AI image prompts.",
+  description: "Trending sports, cricket and IPL, football, Indian and global stock markets, crypto, gaming, Bollywood, Hollywood, movies, web series and explainers.",
   alternates: { canonical: "https://igtrendy.in" },
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 } },
-  openGraph: { type: "website", siteName: "IGTrendy", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
+  openGraph: { type: "website", siteName: "IGTrendy", title: "IGTrendy — What's Trending Now", description: "Sports, markets, crypto, gaming, Bollywood, Hollywood, movies, shows and trending news." },
   twitter: { card: "summary_large_image", title: "IGTrendy — What's Trending Now", description: "Games, movies, shows, events, theories and AI prompts." },
   icons: {
     icon: [
