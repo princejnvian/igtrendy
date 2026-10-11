@@ -36,10 +36,17 @@ function getCategory(slug: string) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const category = getCategory(slug);
+  const { count } = await supabase
+    .from("articles")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "published")
+    .in("category", category.articleCategories);
+  const hasPublishedCoverage = (count || 0) > 0;
   return {
     title: category.title,
     description: category.description,
-    alternates: { canonical: \`/category/\${slug}\` },
+    alternates: { canonical: `/category/${slug}` },
+    robots: { index: hasPublishedCoverage, follow: true },
     openGraph: { title: category.title, description: category.description, type: "website", siteName: "IGTrendy" },
   };
 }
