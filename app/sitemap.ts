@@ -37,16 +37,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const liveCategories = new Set((categories ?? []).map((row: any) => String(row.category || "").toLowerCase()));
   const activeCategoryPaths = Object.entries(categoryGroups)
     .filter(([, group]) => group.some((category) => liveCategories.has(category.toLowerCase())))
-    .map(([slug]) => \`/category/\${slug}\`);
+    .map(([slug]) => `/category/${slug}`);
 
   return [
     ...[...staticPaths, ...activeCategoryPaths].map((path) => ({ url: base + path })),
     ...(articles ?? []).map((article) => ({
-      url: \`\${base}/article/\${article.slug}\`,
+      url: `${base}/article/${article.slug}`,
       lastModified: new Date(article.updated_at || article.published_at || Date.now()),
     })),
     ...(prompts ?? []).map((prompt) => ({
-      url: \`\${base}/prompt/\${prompt.id}\`,
+      url: `${base}/prompt/${prompt.id}`,
       lastModified: new Date(prompt.created_at),
     })),
   ];
