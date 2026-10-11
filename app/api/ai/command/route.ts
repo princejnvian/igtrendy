@@ -228,7 +228,7 @@ const ARTICLE_SCHEMA = {
     title: { type: 'string' },
     slug: { type: 'string' },
     excerpt: { type: 'string' },
-    category: { type: 'string', enum: ['Gaming','Movies','Web Series','Events','Theories','Explained','Trending','News'] },
+    category: { type: 'string', enum: ['Gaming','Sports','Cricket','IPL','Football','Tennis','Esports','Stock Market','Indian Stocks','Global Markets','Crypto','Bollywood','Hollywood','Movies','Web Series','Events','Theories','Explained','Trending','News'] },
     tags: { type: 'array', items: { type: 'string' } },
     content_html: { type: 'string' },
     sources: {
@@ -305,11 +305,11 @@ export async function POST(request: Request) {
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(40);
-    const prompt = `You are the senior editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.
+    const prompt = `You are the senior editorial engine for IGTrendy, a global English trends and news publication covering Sports, Cricket/IPL, Football, Tennis, Esports, Indian Stocks, Global Markets, Crypto, Bollywood, Hollywood, Movies, Web Series, Gaming, Events, Theories, Explainers and wider News.
 
 User command: ${command}
 
-RESEARCH: Use Google Search grounding for current facts, dates, announcements, trailers, release information, cast/creator details and other claims that may have changed. Prefer primary/official sources first, then reputable journalism. Never invent a fact or URL. Distinguish confirmed information from reports, rumours and speculation.
+RESEARCH: Use live web research for current facts, dates, sports fixtures/results, IPL and other tournament updates, stock-market moves, company filings, macroeconomic releases, crypto prices/events, film releases and announcements. Prefer primary sources: stock exchanges and company filings for equities; official league/team sources for sports; official studios/platforms for entertainment; reputable journalism for context. Never invent a fact, score, quote, price or URL. Clearly label market data timestamps, separate reporting from analysis, and distinguish confirmed facts from rumours/speculation. For financial topics, be factual and educational, not personalized investment advice; explain risks and uncertainty.
 
 EDITORIAL STYLE: Write like a polished professional entertainment publication. Use a sharp headline and dek, a compelling factual opening, useful context, clear H2/H3 hierarchy, concise paragraphs, specific dates and names, lists/tables where useful, natural transitions and a useful closing. Make it feel like a real editorial article, not generic AI prose. Do not copy wording or distinctive phrasing from any reference publication.
 
