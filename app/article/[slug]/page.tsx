@@ -19,13 +19,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title: data.title,
     description: String(data.excerpt || data.title).slice(0, 160),
-    alternates: { canonical: \`/article/\${data.slug}\` },
+    alternates: { canonical: `/article/${data.slug}` },
     openGraph: {
       type: "article",
       siteName: "IGTrendy",
       title: data.title,
       description: String(data.excerpt || data.title).slice(0, 200),
-      url: \`https://igtrendy.in/article/\${data.slug}\`,
+      url: `https://igtrendy.in/article/${data.slug}`,
       publishedTime: data.published_at || undefined,
       modifiedTime: data.updated_at || undefined,
       images: data.cover_image_url ? [{ url: data.cover_image_url, alt: data.title }] : [],
@@ -52,7 +52,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
   const publishedAt = data.published_at || data.created_at;
   const modifiedAt = data.updated_at || publishedAt;
-  const canonicalUrl = \`https://igtrendy.in/article/\${data.slug}\`;
+  const canonicalUrl = `https://igtrendy.in/article/${data.slug}`;
   const articleSchema = {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -71,7 +71,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: "https://igtrendy.in" },
-      { "@type": "ListItem", position: 2, name: data.category || "Stories", item: \`https://igtrendy.in/category/\${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}\` },
+      { "@type": "ListItem", position: 2, name: data.category || "Stories", item: `https://igtrendy.in/category/${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}` },
       { "@type": "ListItem", position: 3, name: data.title, item: canonicalUrl },
     ],
   };
@@ -83,7 +83,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema).replace(/</g, "\\u003c") }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema).replace(/</g, "\\u003c") }} />
       <article className="article-page">
-        <span className="article-category"><Link href={\`/category/\${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}\`}>{data.category || "News"}</Link></span>
+        <span className="article-category"><Link href={`/category/${String(data.category || "news").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}>{data.category || "News"}</Link></span>
         <h1>{data.title}</h1>
         <p className="article-excerpt">{data.excerpt}</p>
         <div className="article-meta">Published {new Date(publishedAt).toLocaleDateString("en-US")} · Updated {new Date(modifiedAt).toLocaleDateString("en-US")} · {data.views || 0} views</div>
