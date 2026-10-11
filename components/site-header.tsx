@@ -8,11 +8,14 @@ import { supabase } from "@/lib/supabase";
 const sections = [
   ["🔥", "Trending", "/trending"],
   ["📰", "News", "/category/news"],
+  ["🏆", "Sports", "/category/sports"],
+  ["📈", "Markets", "/category/stock-market"],
+  ["₿", "Crypto", "/category/crypto"],
   ["🎮", "Gaming", "/category/gaming"],
+  ["🎭", "Bollywood", "/category/bollywood"],
+  ["🎥", "Hollywood", "/category/hollywood"],
   ["🎬", "Movies", "/category/movies"],
   ["📺", "Web Series", "/category/web-series"],
-  ["🏆", "Events", "/category/events"],
-  ["🧠", "Theories", "/category/theories"],
 ];
 
 export default function SiteHeader() {
