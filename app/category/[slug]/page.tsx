@@ -71,14 +71,14 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
         <p>{category.description}</p>
         <p>{category.intro}</p>
         <nav aria-label="Related categories" className="category-strip">
-          {category.related.map(([href, label]) => <Link href={\`/category/\${href}\`} key={href}>{label}</Link>)}
+          {category.related.map(([href, label]) => <Link href={`/category/${href}`} key={href}>{label}</Link>)}
         </nav>
       </section>
       <section className="content-section">
         <div className="section-title"><div><div className="eyebrow">LATEST COVERAGE</div><h2>{category.title}</h2></div></div>
         <div className="article-list">
           {(data ?? []).map((a: any) => (
-            <Link className="article-row" href={\`/article/\${a.slug}\`} key={a.id}>
+            <Link className="article-row" href={`/article/${a.slug}`} key={a.id}>
               {a.cover_image_url ? <img src={a.cover_image_url} alt="" loading="lazy" /> : <div className="row-placeholder">✦</div>}
               <div><h2>{a.title}</h2><p>{a.excerpt}</p><small>{a.published_at ? new Date(a.published_at).toLocaleDateString("en-US") : ""} · {a.category}</small></div>
             </Link>
