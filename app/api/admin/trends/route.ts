@@ -86,8 +86,8 @@ function buildLocalTrends(signals:Signal[]){
     if(candidates.some(item=>similarity(item.title,title)>=0.7))continue;
     const category=inferCategory(signal);
     const date=Date.parse(signal.pubDate);
-    const fresh=Number.isFinite(date)?\`Fresh signal from \${signal.region} Google News (\${new Date(date).toUTCString()}).\`:\`Fresh signal from \${signal.region} Google News.\`;
-    const snippet=signal.description?\` \${signal.description.slice(0,420)}\`:"";
+    const fresh=Number.isFinite(date)?`Fresh signal from ${signal.region} Google News (${new Date(date).toUTCString()}).`:`Fresh signal from ${signal.region} Google News.`;
+    const snippet=signal.description?` ${signal.description.slice(0,420)}`:"";
     candidates.push({title,category,why_now:(fresh+snippet).slice(0,700),trend_score:score,source_urls:[signal.link]});
   }
 
