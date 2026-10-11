@@ -48,8 +48,8 @@ const TITLE_STOP_WORDS = new Set(["about","after","again","amid","among","and","
 function titleTokens(value:string){
   return new Set(value.toLowerCase()
     .replace(/&/g," and ")
-    .replace(/[^a-z0-9\\s]/g," ")
-    .split(/\\s+/)
+    .replace(/[^a-z0-9\s]/g," ")
+    .split(/\s+/)
     .filter(word=>word.length>=3&&!TITLE_STOP_WORDS.has(word)));
 }
 
