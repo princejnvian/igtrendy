@@ -34,7 +34,7 @@ function inferCategory(signal:Signal){
   if(/\b(bitcoin|btc|ethereum|ether|crypto|cryptocurrency|solana|xrp|binance|stablecoin|blockchain)\b/.test(text)) return "Crypto";
   if(/\b(bollywood|hindi cinema|hindi film|shah rukh|salman khan|aamir khan|deepika padukone|ranbir kapoor|box office india|tollywood|indian cinema)\b/.test(text)) return "Bollywood";
   if(/\b(hollywood|oscars|academy awards|warner bros|universal pictures|paramount pictures|sony pictures|marvel studios|dc studios)\b/.test(text)) return "Hollywood";
-  if(/\b(gta|playstation|xbox|nintendo|gaming|game|steam|switch|fortnite|minecraft|pokemon|esports)\b/.test(text)) return "Gaming";
+  if(/\b(gta|playstation|xbox|nintendo|gaming|video game|gameplay|game release|game studio|steam|switch|fortnite|minecraft|pokemon|esports)\b/.test(text)) return "Gaming";
   if(/\b(netflix|prime video|disney\+|hbo|web series|series|season|episode|streaming)\b/.test(text)) return "Web Series";
   if(/\b(movie|film|trailer|casting|box office|actor|actress|cinema)\b/.test(text)) return "Movies";
   if(/\b(award|festival|event|concert|premiere|ceremony)\b/.test(text)) return "Events";
