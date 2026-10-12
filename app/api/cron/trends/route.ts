@@ -129,7 +129,7 @@ export async function GET(request: Request) {
     const published: any[] = [];
     const failed: any[] = [];
     const retryable = (message: string) =>
-      /429|rate.?limit|timeout|timed out|temporar|overload|5\\d\\d|fetch failed|network|503|502|504|empty response|no usable output/i.test(message);
+      /429|rate.?limit|timeout|timed out|temporar|overload|5\d\d|fetch failed|network|503|502|504|empty response|no usable output/i.test(message);
 
     for (const trend of selected) {
       if (published.length >= remaining) break;
