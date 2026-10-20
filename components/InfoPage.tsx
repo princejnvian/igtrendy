@@ -19,8 +19,8 @@ export default function InfoPage({
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-6 lg:px-8">
           <YoutentLogo href="/" lightWordmark />
           <div className="flex items-center gap-2">
-            <Link href="/creators" className="hidden rounded-xl px-3 py-2 text-sm font-bold text-white/75 hover:bg-white/10 hover:text-white sm:inline-flex">Browse Creators</Link>
-            <Link href="/dashboard" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-blue-50">Dashboard</Link>
+            <Link href="/trending" className="hidden rounded-xl px-3 py-2 text-sm font-bold text-white/75 hover:bg-white/10 hover:text-white sm:inline-flex">Trending stories</Link>
+            <Link href="/admin" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-blue-50">Studio</Link>
           </div>
         </div>
       </nav>

@@ -8,21 +8,21 @@ export default function SiteFooter() {
         <div>
           <YoutentLogo href="/" />
           <p className="mt-4 max-w-sm text-sm leading-6 text-slate-500">
-            YOUTENT connects clients with talented creators and freelancers through a secure project workflow.
+            Stories, trends, entertainment news and creative inspiration from around the internet.
           </p>
         </div>
         <FooterGroup title="Platform" links={[
-          ["Browse Creators", "/creators"], ["How it works", "/about"], ["FAQ", "/faq"],
+          ["Trending stories", "/trending"], ["How it works", "/about"], ["FAQ", "/faq"],
         ]} />
         <FooterGroup title="Company" links={[
-          ["About YOUTENT", "/about"], ["Contact Us", "/contact"], ["Security", "/security"],
+          ["About IGTrendy", "/about"], ["Contact Us", "/contact"], ["Security", "/security"],
         ]} />
         <FooterGroup title="Legal" links={[
           ["Privacy Policy", "/privacy"], ["Terms of Service", "/terms"],
         ]} />
       </div>
       <div className="border-t border-slate-100 px-5 py-4 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} YOUTENT. All rights reserved.
+        © {new Date().getFullYear()} IGTrendy. All rights reserved.
       </div>
     </footer>
   );

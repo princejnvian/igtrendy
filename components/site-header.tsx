@@ -101,11 +101,6 @@ export default function SiteHeader() {
                   <strong>{displayName}</strong>
                   <small>{user.email}</small>
                 </div>
-                {profile?.username && (
-                  <Link href={`/profile/${profile.username}`} onClick={() => setMenuOpen(false)}>
-                    👤 My profile
-                  </Link>
-                )}
                 <Link href="/prompts" onClick={() => setMenuOpen(false)}>🎨 AI Prompts</Link>
                 <Link href="/admin" onClick={() => setMenuOpen(false)}>⚙ Studio</Link>
                 <button type="button" onClick={signOut}>↪ Sign out</button>
