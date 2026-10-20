@@ -228,7 +228,7 @@ const ARTICLE_SCHEMA = {
     title: { type: 'string' },
     slug: { type: 'string' },
     excerpt: { type: 'string' },
-    category: { type: 'string', enum: ['Gaming','Sports','Cricket','IPL','Football','Tennis','Esports','Stock Market','Indian Stocks','Global Markets','Crypto','Bollywood','Hollywood','Movies','Web Series','Events','Theories','Explained','Trending','News'] },
+    category: { type: 'string', enum: ['Gaming','Movies','Web Series','Events','Theories','Explained','Trending','News'] },
     tags: { type: 'array', items: { type: 'string' } },
     content_html: { type: 'string' },
     sources: {
@@ -301,19 +301,17 @@ export async function POST(request: Request) {
     const db = serviceClient();
     const today = new Date().toISOString().slice(0, 10);
     const { data: usage } = await db.from("ai_usage_daily").select("article_count").eq("usage_date", today).maybeSingle();
-    const articleLimit = Math.min(5, Math.max(1, Number(process.env.DAILY_ARTICLE_LIMIT || 5)));
+    const articleLimit = Number(process.env.DAILY_ARTICLE_LIMIT || 10);
     if ((usage?.article_count || 0) >= articleLimit) return NextResponse.json({ error: `Daily article limit reached (${articleLimit}).` }, { status: 429 });
 
     const { data: recentArticles } = await db.from("articles").select("id,title,slug,excerpt,category").order("created_at", { ascending:false }).limit(40);
-    const prompt = `You are the senior editorial engine for IGTrendy, a global English trends and news publication covering Sports, Cricket/IPL, Football, Tennis, Esports, Indian Stocks, Global Markets, Crypto, Bollywood, Hollywood, Movies, Web Series, Gaming, Events, Theories, Explainers and wider News.
+    const prompt = `You are the senior editorial engine for IGTrendy, a global English entertainment, gaming and internet-culture publication.
 
 User command: ${command}
 
-RESEARCH: Use live web research for current facts, dates, sports fixtures/results, IPL and other tournament updates, stock-market moves, company filings, macroeconomic releases, crypto prices/events, film releases and announcements. Prefer primary sources: stock exchanges and company filings for equities; official league/team sources for sports; official studios/platforms for entertainment; reputable journalism for context. Never invent a fact, score, quote, price or URL. Clearly label market data timestamps, separate reporting from analysis, and distinguish confirmed facts from rumours/speculation. For financial topics, be factual and educational, not personalized investment advice; explain risks and uncertainty.
+RESEARCH: Use Google Search grounding for current facts, dates, announcements, trailers, release information, cast/creator details and other claims that may have changed. Prefer primary/official sources first, then reputable journalism. Never invent a fact or URL. Distinguish confirmed information from reports, rumours and speculation.
 
-CATEGORY SELECTION: Choose the most specific accurate category from Gaming, Sports, Cricket, IPL, Football, Tennis, Esports, Stock Market, Indian Stocks, Global Markets, Crypto, Bollywood, Hollywood, Movies, Web Series, Events, Theories, Explained, Trending or News. Use IPL for Indian Premier League stories; Cricket for other cricket stories; Football for soccer; Indian Stocks for NSE/BSE/Nifty/Sensex and Indian-listed companies; Global Markets for US and international equities/economics; Crypto for Bitcoin, Ethereum and digital assets; Bollywood for Hindi/Indian cinema; Hollywood for US/international studio cinema. Match the supplied trend category when it accurately fits the story. Do not choose a generic category when a specific one fits.
-
-EDITORIAL STYLE: Write like a polished professional publication. Use a sharp headline and dek, a compelling factual opening, useful context, clear H2/H3 hierarchy, concise paragraphs, specific dates and names, lists/tables where useful, natural transitions and a useful closing. Make it feel like a real editorial article, not generic AI prose. Do not copy wording or distinctive phrasing from any reference publication.
+EDITORIAL STYLE: Write like a polished professional entertainment publication. Use a sharp headline and dek, a compelling factual opening, useful context, clear H2/H3 hierarchy, concise paragraphs, specific dates and names, lists/tables where useful, natural transitions and a useful closing. Make it feel like a real editorial article, not generic AI prose. Do not copy wording or distinctive phrasing from any reference publication.
 
 LINKING: In content_html, naturally link the first meaningful mention of important games, films, shows, studios, platforms, trailers or official announcements when a verified source URL is available. Use real URLs from your grounded research/sources only; never invent URLs. Use normal HTML anchors with target="_blank" rel="noopener noreferrer nofollow". Do not turn every word into a link. Aim for 3-8 useful inline links when appropriate.
 

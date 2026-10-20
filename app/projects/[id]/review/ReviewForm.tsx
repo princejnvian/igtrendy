@@ -1,0 +1,8 @@
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+export default function ReviewForm({ projectId }: { projectId: string }) {
+  const router = useRouter(); const [rating,setRating]=useState(5); const [comment,setComment]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  async function submit(e: React.FormEvent){e.preventDefault();setSaving(true);setError("");const r=await fetch(`/api/projects/${projectId}/review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rating,comment})});const d=await r.json();if(!r.ok){setError(d.error||"Unable to submit review.");setSaving(false);return;}router.refresh();}
+  return <form onSubmit={submit} className="mt-8 space-y-6"><div><label className="text-sm font-bold">Rating</label><div className="mt-3 flex gap-2">{[1,2,3,4,5].map(n=><button key={n} type="button" onClick={()=>setRating(n)} className={`h-11 w-11 rounded-xl border text-lg ${n<=rating?"border-blue-600 bg-blue-600 text-white":"border-slate-200 bg-white text-slate-400"}`}>★</button>)}</div></div><div><label className="text-sm font-bold">Review</label><textarea value={comment} onChange={e=>setComment(e.target.value)} rows={5} placeholder="Share a short review..." className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white"/></div>{error&&<p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<button disabled={saving} className="w-full rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-black text-white hover:bg-blue-600 disabled:opacity-50">{saving?"Submitting...":"Submit Review"}</button></form>;
+}

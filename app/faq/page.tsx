@@ -1,0 +1,10 @@
+import InfoPage, { InfoSection } from "@/components/InfoPage";
+export const metadata = { title: "FAQ | YOUTENT", description: "Frequently asked questions about YOUTENT." };
+export default function FAQPage() { return <InfoPage eyebrow="Help Center" title="Frequently asked questions." intro="Quick answers about projects, payments, creators and account security on YOUTENT.">
+  <InfoSection title="How does an order start?"><p>A client can browse freelancer profiles without logging in. When the client selects a gig and clicks Order Now, the gig details, fixed price, delivery time and revisions are shown. After login, the client continues to Razorpay payment. A paid order automatically creates the active project.</p></InfoSection>
+  <InfoSection title="How does payment work?"><p>The client pays the project amount plus the displayed YOUTENT platform fee through Razorpay. The payment is verified server-side before the project becomes active.</p></InfoSection>
+  <InfoSection title="When does the freelancer receive the project amount?"><p>YOUTENT records the project amount as pending in the internal marketplace ledger after a successful payment. When the client approves the final delivery, the release workflow moves the project amount to the freelancer's available wallet balance. A production real-money escrow arrangement also requires an approved payment/escrow structure with the regulated provider.</p></InfoSection>
+  <InfoSection title="Can I message a creator before ordering?" ><p>Yes. Creator profiles support direct communication. Once a paid order becomes active, the project also gets its own dedicated project conversation.</p></InfoSection>
+  <InfoSection title="What if there is a problem with delivery?"><p>Use the project workspace to communicate and request revisions before completion. For account or payment issues, contact support.</p></InfoSection>
+  <InfoSection title="How do notifications work?"><p>New requests, messages and project updates appear in the notification center. Opening the relevant section clears its badge; later new activity creates a new badge.</p></InfoSection>
+</InfoPage>; }
